@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import MappingProxyType
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+)
 
 
 class ActionRequest(BaseModel):
@@ -32,6 +39,15 @@ class ActionRequest(BaseModel):
         if not value.strip():
             raise ValueError("must be a non-empty string")
         return value
+
+    @field_validator("parameters")
+    @classmethod
+    def freeze_parameters(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return MappingProxyType(dict(value))
+
+    @field_serializer("parameters")
+    def serialize_parameters(self, value: dict[str, Any]) -> dict[str, Any]:
+        return dict(value)
 
     @field_validator("requested_at")
     @classmethod
