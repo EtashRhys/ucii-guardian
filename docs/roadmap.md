@@ -40,10 +40,30 @@ Build only:
 
 Acceptance:
 
-- [ ] Guardian runs through Strands.
-- [ ] A request becomes a bounded action envelope.
-- [ ] No consequential executor exists yet.
-- [ ] Model output cannot itself create authorization.
+- [x] Guardian runs through Strands.
+- [x] A request becomes a bounded action envelope.
+- [x] No consequential executor exists yet.
+- [x] Model output cannot itself create authorization.
+
+
+**Verified completion evidence ? 2026-09-09:**
+
+- Live AWS Strands/Bedrock invocation succeeded using the Guardian agent.
+- Natural-language purchase intent was normalized through Strands structured
+  output into a validated `ActionRequest`.
+- The live boundary stopped at `ActionRequest`; authorization remained
+  explicitly not established and no action was executed.
+- Guardian had no consequential or authority-granting tools.
+- `ActionRequest` parameters are immutable after validation while preserving
+  Strands-compatible JSON-object structured output.
+- Normalization boundary tests verify successful structured output, rejection
+  of blank requests before agent invocation, and fail-closed behavior when
+  structured output is absent.
+- Final Objective 1 regression: `6 passed`.
+- Verified implementation checkpoint:
+  `ac9c1c3af43e6a2370d722c020e54b2d7870756f`.
+
+**Status: COMPLETE.**
 
 ## Objective 2 — UCII Guardian identity binding
 
