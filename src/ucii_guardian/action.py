@@ -2,45 +2,40 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 from uuid import uuid4
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-@dataclass(frozen=True, slots=True)
-class ActionRequest:
+
+class ActionRequest(BaseModel):
     """A normalized proposed action.
 
     This object describes intent only. Possessing an ActionRequest never implies
     that Guardian is authorized to execute it.
     """
 
-    requester: str
-    guardian_identity: str
-    operation: str
-    target: str
-    parameters: Mapping[str, Any] = field(default_factory=dict)
-    request_id: str = field(default_factory=lambda: str(uuid4()))
-    requested_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    def __post_init__(self) -> None:
-        for name in ("requester", "guardian_identity", "operation", "target"):
-            value = getattr(self, name)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{name} must be a non-empty string")
+    requester: str = Field(description="Human or external requester identifier")
+    guardian_identity: str = Field(description="Guardian identity handling the request")
+    operation: str = Field(description="Bounded operation being proposed")
+    target: str = Field(description="Specific action target")
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    request_id: str = Field(default_factory=lambda: str(uuid4()))
+    requested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-        if not isinstance(self.parameters, Mapping):
-            raise TypeError("parameters must be a mapping")
+    @field_validator("requester", "guardian_identity", "operation", "target")
+    @classmethod
+    def require_non_empty_string(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must be a non-empty string")
+        return value
 
-        object.__setattr__(
-            self,
-            "parameters",
-            MappingProxyType(dict(self.parameters)),
-        )
-
-        if self.requested_at.tzinfo is None:
+    @field_validator("requested_at")
+    @classmethod
+    def require_timezone_aware_timestamp(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
             raise ValueError("requested_at must be timezone-aware")
+        return value
