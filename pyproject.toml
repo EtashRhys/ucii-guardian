@@ -9,6 +9,7 @@ description = "Bounded autonomous authority agent built with AWS Strands Agents 
 requires-python = ">=3.11"
 dependencies = [
   "strands-agents>=1.0.0",
+  "ucii-sdk @ git+https://github.com/EtashRhys/UCII.git@d0c903fb040e41b6a7f10dccd2d840311f06d1eb#subdirectory=sdk",
 ]
 
 [project.optional-dependencies]
