@@ -419,6 +419,8 @@ Acceptance:
 
 ## Objective 8 — Minimal demo interface
 
+**Status:** COMPLETE
+
 **Goal:** Present Guardian as a coherent product without building a frontend platform.
 
 Minimum surfaces:
@@ -431,11 +433,21 @@ Minimum surfaces:
 
 Acceptance:
 
-- [ ] Routine authorization is visually obvious.
-- [ ] Escalation is visually obvious.
-- [ ] Human approval/denial is obvious.
-- [ ] Revocation and post-revocation denial are obvious.
-- [ ] Demo can be understood without reading source code.
+- [x] Routine authorization is visually obvious.
+- [x] Escalation is visually obvious.
+- [x] Human approval/denial is obvious.
+- [x] Revocation and post-revocation denial are obvious.
+- [x] Demo can be understood without reading source code.
+
+Verified evidence:
+
+- Routine bounded request rendered `ALLOW / ACTIVE / Completed` and proceeded without human interruption.
+- Exceptional request rendered `ESCALATION_REQUIRED / NOT_GRANTED / Awaiting human decision` and did not execute before human judgment.
+- `APPROVE_ONCE` continued the exact pending escalation, preserved the original request, executed only that one approved action, and did not create standing delegated authority.
+- Fresh delegated Authority B `51417346-4bc9-419e-8785-92309360cf94` was permanently revoked through UCII's real delegated action-authority lifecycle service.
+- Repeating the same routine request after revocation rendered `DENY / REVOKED / No execution`.
+- Post-revocation provenance recorded `REQUEST_RECEIVED`, `IDENTITY_VERIFIED`, `AUTHORITY_CHECKED`, `AUTHORITY_REVOKED`, and `EXECUTION_REFUSED` with no execution-started or execution-completed event.
+- Milestone 8 polished end-to-end browser run was screen-recorded successfully.
 
 ## Objective 9 — Hackathon hardening
 
