@@ -17,7 +17,29 @@ from starlette.routing import Route
 from ucii_guardian.agent import build_guardian_agent
 from ucii_guardian.identity import GuardianIdentityConfig
 from ucii_guardian.provenance_recorder import GuardianProvenanceRecorder
-from ucii_guardian.workflow import GuardianWorkflowOutcome, run_guardian_request
+from ucii_guardian.approval import HumanDecision
+from ucii_guardian.workflow import (
+    GuardianWorkflowOutcome,
+    continue_guardian_escalation,
+    run_guardian_request,
+)
+
+
+_pending_outcome: GuardianWorkflowOutcome | None = None
+
+
+def _set_pending_outcome(
+    outcome: GuardianWorkflowOutcome | None,
+) -> None:
+    global _pending_outcome
+    _pending_outcome = outcome
+
+
+def _take_pending_outcome() -> GuardianWorkflowOutcome | None:
+    global _pending_outcome
+    outcome = _pending_outcome
+    _pending_outcome = None
+    return outcome
 
 
 def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
@@ -40,20 +62,42 @@ def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
     decision = escape(outcome.authority.decision.value)
     authority = escape(outcome.authority.authority_state)
 
+    pending_escalation = (
+        outcome.escalation is not None
+        and outcome.human_decision is None
+        and outcome.execution is None
+    )
+
+    if outcome.human_decision is not None:
+        decision = escape(outcome.human_decision.decision.value)
+
     if outcome.execution is not None:
         execution = "Completed"
-    elif outcome.escalation is not None:
+    elif pending_escalation:
         execution = "Awaiting human decision"
     else:
         execution = "No execution"
 
-    if outcome.escalation is not None:
+    if pending_escalation:
         reason = (
             "Current UCII authority does not cover this action. "
             "Human judgment is required."
         )
         approve_disabled = ""
         deny_disabled = ""
+    elif outcome.human_decision is not None:
+        if outcome.execution is not None:
+            reason = (
+                "Human approved this exact action once. "
+                "Guardian completed only that approved action."
+            )
+        else:
+            reason = (
+                "Human denied this exact action. "
+                "Guardian did not execute it."
+            )
+        approve_disabled = "disabled"
+        deny_disabled = "disabled"
     elif outcome.authority.decision.value == "DENY":
         reason = (
             "Current UCII authority is not usable. "
@@ -253,7 +297,6 @@ when the requested action exceeds the authority a human actually granted.
 
 <div class="grid">
 <section class="card">
-<label for="request">Human request</label>
 <form method="post" action="/evaluate">
 <label for="request">Human request</label>
 <textarea id="request" name="request"
@@ -283,10 +326,12 @@ placeholder="Example: Purchase one printer cartridge under $80.">{request_value}
 <aside class="card">
 <div class="label">Human judgment</div>
 <p class="muted">{reason}</p>
+<form method="post" action="/decision">
 <div class="actions">
-<button class="approve" type="button" {approve_disabled}>Approve Once</button>
-<button class="deny" type="button" {deny_disabled}>Deny</button>
+<button class="approve" type="submit" name="decision" value="APPROVE_ONCE" {approve_disabled}>Approve Once</button>
+<button class="deny" type="submit" name="decision" value="DENY" {deny_disabled}>Deny</button>
 </div>
+</form>
 </aside>
 </div>
 
@@ -382,10 +427,55 @@ async def evaluate(request: Request) -> HTMLResponse:
         receipt_directory=receipts,
     )
 
+    if (
+        outcome.escalation is not None
+        and outcome.human_decision is None
+        and outcome.execution is None
+    ):
+        _set_pending_outcome(outcome)
+    else:
+        _set_pending_outcome(None)
+
     return HTMLResponse(
         render_guardian_page(
             outcome=outcome,
             request_value=human_request,
+        )
+    )
+
+
+async def decide(request: Request) -> HTMLResponse:
+    form = await request.form()
+    raw_decision = str(form.get("decision", "")).strip()
+
+    try:
+        decision = HumanDecision(raw_decision)
+    except ValueError:
+        return HTMLResponse(
+            render_guardian_page(),
+            status_code=400,
+        )
+
+    pending = _take_pending_outcome()
+
+    if pending is None:
+        return HTMLResponse(
+            render_guardian_page(),
+            status_code=409,
+        )
+
+    _, _, recorder, receipts = build_runtime()
+
+    outcome = continue_guardian_escalation(
+        outcome=pending,
+        decision=decision,
+        recorder=recorder,
+        receipt_directory=receipts,
+    )
+
+    return HTMLResponse(
+        render_guardian_page(
+            outcome=outcome,
         )
     )
 
@@ -395,5 +485,6 @@ app = Starlette(
     routes=[
         Route("/", homepage, methods=["GET"]),
         Route("/evaluate", evaluate, methods=["POST"]),
+        Route("/decision", decide, methods=["POST"]),
     ],
 )
