@@ -163,11 +163,58 @@ Acceptance:
 
 Acceptance:
 
-- [ ] One executor interface exists.
-- [ ] Executor requires action-bound verified authorization evidence.
-- [ ] Authorized action succeeds.
-- [ ] Missing/invalid authorization cannot execute.
-- [ ] LLM instruction alone cannot execute.
+- [x] One executor interface exists.
+- [x] Executor requires action-bound verified authorization evidence.
+- [x] Authorized action succeeds.
+- [x] Missing/invalid authorization cannot execute.
+- [x] LLM instruction alone cannot execute.
+
+**Verified completion evidence — 2026-09-10:**
+
+- Guardian implements exactly one protected consequential executor domain:
+  `guardian.purchase.office_supply`.
+- `execute_office_supply(...)` requires an `AuthorityDecisionResult` whose
+  decision is exactly `ALLOW`, authority state is exactly `ACTIVE`, and whose
+  Guardian identity, operation, and request ID exactly match the proposed
+  `ActionRequest` before any side effect can occur.
+- The executor validates the bounded office-supply domain and quantity/price
+  limits independently of model output and writes a uniquely keyed durable
+  execution receipt only after all authorization and domain guards pass.
+- Executor tests prove non-`ALLOW`, mismatched identity/operation/request ID,
+  invalid domain parameters, direct LLM instruction without authorization, and
+  replay of the same request cannot execute.
+- A first live Strands attempt emitted generic operation `purchase`; Guardian
+  rejected it before the UCII authority check or executor was reached. No
+  receipt was created. This demonstrated fail-closed behavior for model output
+  outside the canonical protected execution contract.
+- The Strands normalization contract was then bounded to the exact operation
+  `guardian.purchase.office_supply` and canonical `office-supply:` target
+  vocabulary without adding execution tools or allowing the model to create
+  authority.
+- A fresh live end-to-end run then produced canonical request ID
+  `44879bd8-d09b-40a3-be24-6bcb7ee3011d`, verified Guardian's real UCII
+  identity and Credential B through the public UCII SDK/HTTPS boundary, and
+  received delegated authority state `ACTIVE` with decision `ALLOW`.
+- The authority check itself still performed no execution; only the subsequent
+  protected executor invocation completed the action and wrote durable receipt
+  `guardian-office-supply-44879bd8-d09b-40a3-be24-6bcb7ee3011d` outside the
+  repository.
+- The live receipt was verified to match the exact Guardian identity,
+  operation, target, and request ID of the authorized action.
+- The live proof used no human approval, no controller authority, no Guardian
+  self-payment, and did not expose the private ML-DSA-65 signing key.
+- Final Objective 1-4 composition regression: `55 passed`.
+- Final full Guardian regression: `79 passed`.
+- Protected executor implementation checkpoint:
+  `34bbcc0b2229717145d7f569c232e3f7ee7402cb`.
+- Strands real-identity binding checkpoint:
+  `a3bcf9490e3ea82585fd250a656833e7f1734975`.
+- Canonical Strands normalization checkpoint:
+  `972b5f8d1d31546a39a16fac22bcee00fb95e998`.
+- Screen-record milestone 3 was captured from a successful fresh live
+  `Strands -> UCII -> ALLOW -> EXECUTE` run.
+
+**Status: COMPLETE.**
 
 ## Objective 5 — Human escalation and bounded approval
 
