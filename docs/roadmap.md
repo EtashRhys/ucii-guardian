@@ -71,10 +71,38 @@ Acceptance:
 
 Acceptance:
 
-- [ ] Guardian authenticates as its own UCII identity.
-- [ ] Credential proof is verifiable.
-- [ ] Authentication failure fails closed.
-- [ ] No private UCII implementation bypass is introduced.
+- [x] Guardian authenticates as its own UCII identity.
+- [x] Credential proof is verifiable.
+- [x] Authentication failure fails closed.
+- [x] No private UCII implementation bypass is introduced.
+
+**Verified completion evidence — 2026-09-10:**
+
+- Guardian identity `35c1db3d-61d7-4d0d-a5d7-db3ab7f79520`
+  was verified through the real public UCII SDK/HTTPS boundary.
+- Active Credential B fingerprint
+  `9d14f6f5a53629709afb1574ef9d14bead52d6da5ecb1334cfaf930abd321559`
+  was proven using the Guardian-held ML-DSA-65 signing key; the private key
+  remained in local Guardian custody.
+- UCII returned `UCII_VERIFIED` for the live peer-authentication proof.
+- Guardian's first-party service entitlement satisfied only the economic
+  access gate for `POST /v1/credentials/verify`; Guardian did not pay itself.
+- No controller authority, action authorization, approval authority, or
+  execution authority was created by identity verification.
+- Runtime implementation uses the public `ucii-sdk` boundary and contains no
+  private `pq_auth` server import or implementation bypass.
+- Authentication and UCII verification failures fail closed through
+  `GuardianIdentityVerificationError`.
+- Verification results deliberately expose only established identity,
+  credential-fingerprint, and verification-status facts; they carry no
+  authorization grant.
+- Final targeted Objective 2 regression: `7 passed`.
+- Final full Guardian regression: `34 passed`.
+- Verified implementation checkpoint:
+  `0f46eae19fd15cf8cc09e503bb38632fcec13f34`.
+- Screen-record milestone 2 was captured from the successful live verification.
+
+**Status: COMPLETE.**
 
 ## Objective 3 — Authority decision tool
 
