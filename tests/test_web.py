@@ -230,7 +230,7 @@ def test_human_approve_once_continues_exact_pending_web_outcome(
         fake_continue,
     )
 
-    web._set_pending_outcome(None)
+    web._set_pending_context(None)
 
     client = TestClient(web.app)
 
@@ -251,7 +251,8 @@ def test_human_approve_once_continues_exact_pending_web_outcome(
 
     assert second.status_code == 200
     assert "Completed" in second.text
-    assert runtime_calls == ["RUNTIME"]
+    assert "Exceptional purchase request" in second.text
+    assert runtime_calls == []
     assert len(continuation_calls) == 1
     assert continuation_calls[0]["outcome"] is pending
 
@@ -317,7 +318,7 @@ def test_human_deny_continues_pending_web_outcome_without_execution(
         fake_continue,
     )
 
-    web._set_pending_outcome(None)
+    web._set_pending_context(None)
 
     client = TestClient(web.app)
 
@@ -335,6 +336,7 @@ def test_human_deny_continues_pending_web_outcome_without_execution(
     assert seen == [web.HumanDecision.DENY]
     assert "DENY" in response.text
     assert "No execution" in response.text
+    assert "Exceptional purchase request" in response.text
     assert "Awaiting human decision" not in response.text
 
 
@@ -343,7 +345,7 @@ def test_decision_without_pending_escalation_fails_closed(
 ) -> None:
     from ucii_guardian import web
 
-    web._set_pending_outcome(None)
+    web._set_pending_context(None)
 
     monkeypatch.setattr(
         web,

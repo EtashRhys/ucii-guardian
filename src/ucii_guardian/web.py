@@ -6,6 +6,7 @@ It does not create authority, approve actions, or execute consequential work.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 
@@ -25,21 +26,31 @@ from ucii_guardian.workflow import (
 )
 
 
-_pending_outcome: GuardianWorkflowOutcome | None = None
+@dataclass(frozen=True)
+class PendingEscalationContext:
+    """Exact browser continuation state for one pending escalation."""
+
+    outcome: GuardianWorkflowOutcome
+    request_value: str
+    recorder: GuardianProvenanceRecorder
+    receipt_directory: Path
 
 
-def _set_pending_outcome(
-    outcome: GuardianWorkflowOutcome | None,
+_pending_context: PendingEscalationContext | None = None
+
+
+def _set_pending_context(
+    context: PendingEscalationContext | None,
 ) -> None:
-    global _pending_outcome
-    _pending_outcome = outcome
+    global _pending_context
+    _pending_context = context
 
 
-def _take_pending_outcome() -> GuardianWorkflowOutcome | None:
-    global _pending_outcome
-    outcome = _pending_outcome
-    _pending_outcome = None
-    return outcome
+def _take_pending_context() -> PendingEscalationContext | None:
+    global _pending_context
+    context = _pending_context
+    _pending_context = None
+    return context
 
 
 def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
@@ -432,9 +443,16 @@ async def evaluate(request: Request) -> HTMLResponse:
         and outcome.human_decision is None
         and outcome.execution is None
     ):
-        _set_pending_outcome(outcome)
+        _set_pending_context(
+            PendingEscalationContext(
+                outcome=outcome,
+                request_value=human_request,
+                recorder=recorder,
+                receipt_directory=receipts,
+            )
+        )
     else:
-        _set_pending_outcome(None)
+        _set_pending_context(None)
 
     return HTMLResponse(
         render_guardian_page(
@@ -456,7 +474,7 @@ async def decide(request: Request) -> HTMLResponse:
             status_code=400,
         )
 
-    pending = _take_pending_outcome()
+    pending = _take_pending_context()
 
     if pending is None:
         return HTMLResponse(
@@ -464,18 +482,17 @@ async def decide(request: Request) -> HTMLResponse:
             status_code=409,
         )
 
-    _, _, recorder, receipts = build_runtime()
-
     outcome = continue_guardian_escalation(
-        outcome=pending,
+        outcome=pending.outcome,
         decision=decision,
-        recorder=recorder,
-        receipt_directory=receipts,
+        recorder=pending.recorder,
+        receipt_directory=pending.receipt_directory,
     )
 
     return HTMLResponse(
         render_guardian_page(
             outcome=outcome,
+            request_value=pending.request_value,
         )
     )
 
