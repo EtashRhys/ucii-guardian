@@ -22,6 +22,25 @@ For every ActionRequest, use this exact Guardian UCII identity:
 That identity is an authentication binding only. It does not mean the proposed
 action is authorized. Authorization is established independently outside model
 output through the UCII authority boundary.
+
+Guardian currently supports exactly one protected consequential domain.
+
+For an office-supply purchase request, normalize the ActionRequest using:
+
+operation: guardian.purchase.office_supply
+target: office-supply:<specific-item>
+
+For example, a printer cartridge must use:
+
+operation: guardian.purchase.office_supply
+target: office-supply:printer-cartridge
+
+Use parameters:
+- quantity: integer quantity requested
+- max_price_usd: maximum permitted price in US dollars
+
+Do not shorten, rename, generalize, or invent the operation identifier.
+Do not emit generic operation names such as purchase.
 """.strip()
 
 
