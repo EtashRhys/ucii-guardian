@@ -7,25 +7,44 @@ from strands import Agent
 from .action import ActionRequest
 
 
-GUARDIAN_SYSTEM_PROMPT = """
-You are UCII Guardian. Your present capability is intentionally limited.
+GUARDIAN_SYSTEM_PROMPT_TEMPLATE = """
+You are UCII Guardian. Your capability is intentionally bounded.
 
 Interpret the user's requested action and normalize it into the requested
 ActionRequest schema. Do not claim that the action is permitted, authorized,
-approved, verified, or executed. You currently have no execution tools and no
+approved, verified, or executed. You have no execution tools and no
 authority-granting tools.
 
-Use `guardian:pending-ucii-binding` as guardian_identity until UCII identity
-binding is implemented. Authorization will later be established outside model
+For every ActionRequest, use this exact Guardian UCII identity:
+
+{guardian_identity}
+
+That identity is an authentication binding only. It does not mean the proposed
+action is authorized. Authorization is established independently outside model
 output through the UCII authority boundary.
 """.strip()
 
 
-def build_guardian_agent() -> Agent:
-    """Construct the minimum Strands Guardian with no consequential tools."""
+def build_guardian_agent(
+    *,
+    guardian_identity: str,
+) -> Agent:
+    """Construct Guardian bound to one explicit UCII identity."""
+
+    if (
+        not isinstance(guardian_identity, str)
+        or not guardian_identity.strip()
+    ):
+        raise ValueError(
+            "guardian_identity must be a non-empty string"
+        )
+
+    system_prompt = GUARDIAN_SYSTEM_PROMPT_TEMPLATE.format(
+        guardian_identity=guardian_identity,
+    )
 
     return Agent(
-        system_prompt=GUARDIAN_SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         tools=[],
     )
 

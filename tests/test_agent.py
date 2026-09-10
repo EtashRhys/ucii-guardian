@@ -1,9 +1,9 @@
-﻿from types import SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 
 from ucii_guardian.action import ActionRequest
-from ucii_guardian.agent import propose_action
+from ucii_guardian.agent import build_guardian_agent, propose_action
 
 
 class FakeAgent:
@@ -72,3 +72,65 @@ def test_propose_action_fails_closed_without_structured_output() -> None:
 
     assert len(agent.calls) == 1
     assert agent.calls[0][1] is ActionRequest
+
+
+def test_build_guardian_agent_binds_exact_ucii_identity(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeStrandsAgent:
+        def __init__(
+            self,
+            *,
+            system_prompt: str,
+            tools: list,
+        ) -> None:
+            captured["system_prompt"] = system_prompt
+            captured["tools"] = tools
+
+    monkeypatch.setattr(
+        "ucii_guardian.agent.Agent",
+        FakeStrandsAgent,
+    )
+
+    identity_id = (
+        "35c1db3d-61d7-4d0d-a5d7-db3ab7f79520"
+    )
+
+    agent = build_guardian_agent(
+        guardian_identity=identity_id,
+    )
+
+    assert isinstance(
+        agent,
+        FakeStrandsAgent,
+    )
+
+    prompt = captured["system_prompt"]
+
+    assert isinstance(prompt, str)
+    assert identity_id in prompt
+    assert "pending-ucii-binding" not in prompt
+    assert "authentication binding only" in prompt
+    assert "does not mean" in prompt
+    assert captured["tools"] == []
+
+
+@pytest.mark.parametrize(
+    "guardian_identity",
+    [
+        "",
+        "   ",
+    ],
+)
+def test_build_guardian_agent_rejects_blank_identity(
+    guardian_identity,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="guardian_identity must be a non-empty string",
+    ):
+        build_guardian_agent(
+            guardian_identity=guardian_identity,
+        )
