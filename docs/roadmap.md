@@ -288,10 +288,66 @@ Acceptance:
 
 Acceptance:
 
-- [ ] An action succeeds while authority is active.
-- [ ] Authority can be revoked.
-- [ ] A later equivalent attempt is denied.
-- [ ] No stale/cached authorization bypasses revocation.
+- [x] An action succeeds while authority is active.
+- [x] Authority can be revoked.
+- [x] A later equivalent attempt is denied.
+- [x] No stale/cached authorization bypasses revocation.
+
+**Verified completion evidence — 2026-09-10:**
+
+- UCII added a bounded delegated action-authority lifecycle service that can
+  permanently transition an existing `ACTIVE` authority record to `REVOKED`
+  while preserving historical revocation timestamp and reason.
+- The revocation service does not modify identity credentials, authenticate a
+  caller, create controller authority, establish economic/payment authority,
+  execute an operation, broaden authority, or reactivate historical authority.
+- UCII revocation-service regression completed with `48 passed` across action
+  authority persistence, evaluation, lifecycle mutation, and the public
+  delegated-authority check boundary.
+- Verified UCII revocation-service checkpoint:
+  `e0ddb5cbba73e1742015b0d41f542ac54037ec9b`.
+- Before the live revocation event, Guardian produced a fresh real AWS Strands
+  routine request for exact operation `guardian.purchase.office_supply`.
+  Guardian verified identity
+  `35c1db3d-61d7-4d0d-a5d7-db3ab7f79520` and active Credential B through the
+  public UCII SDK/HTTPS boundary.
+- The fresh pre-revocation request ID
+  `d06cdc36-cba8-4743-8f26-3932dec3a2fa` received authoritative UCII state
+  `ACTIVE` and Guardian decision `ALLOW`.
+- The protected executor then completed that action and wrote durable receipt
+  `guardian-office-supply-d06cdc36-cba8-4743-8f26-3932dec3a2fa`, proving the
+  delegated authority was genuinely operational before revocation.
+- The human then permanently revoked the exact production demo authority
+  `bea80670-e7ea-4176-a491-e3c0130d00cf`, scoped only to
+  `guardian.purchase.office_supply`.
+- The persisted authority transitioned from `ACTIVE` to `REVOKED` at
+  `2026-09-10 20:47:51.593073` with bounded reason
+  `human_revoked_guardian_demo_authority`.
+- An independent post-mutation database read confirmed the historical record
+  remained `REVOKED`, no active authority remained for the routine operation,
+  and the UCII evaluator independently returned `REVOKED`.
+- Guardian then generated a completely fresh equivalent AWS Strands request,
+  request ID `1647c91d-e4b0-4f94-991f-d99acc5e0dc9`.
+- Guardian identity and Credential B still verified as `UCII_VERIFIED`,
+  demonstrating that delegated-action revocation is independent from identity
+  authentication and credential validity.
+- The fresh public UCII delegated-authority check returned `REVOKED`; Guardian
+  deterministically mapped that state to `DENY`.
+- The protected executor rejected the denied action with
+  `Protected execution requires ALLOW`; no post-revocation durable receipt was
+  created.
+- The post-revocation request used a fresh action envelope and fresh public
+  UCII authority check rather than reusing the earlier `ALLOW`, and no
+  stale/cached authorization bypass survived revocation.
+- Authority A is now permanent historical evidence and must never be
+  reactivated. Any later delegated routine authority requires a fresh authority
+  record rather than mutation of the revoked record.
+- Identity credential B remained active; no credential revocation, controller
+  mutation, Guardian self-payment, or private-key disclosure occurred.
+- Screen-record milestone 6 captured the coherent live sequence:
+  `ACTIVE -> ALLOW -> EXECUTE -> HUMAN REVOKE -> REVOKED -> DENY -> NO EXECUTION`.
+
+**Status: COMPLETE.**
 
 ## Objective 7 — Durable provenance
 

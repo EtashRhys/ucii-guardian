@@ -106,6 +106,15 @@ Capture as one coherent sequence if possible:
 
 **Why it matters:** This is likely one of Guardian's strongest differentiators. It proves revocation is operational, not merely a UI label or policy statement.
 
+**Captured — 2026-09-10:** Milestone 6 was successfully screen-recorded as one
+live authority-control sequence. A fresh Strands routine request received
+`ACTIVE -> ALLOW` and executed through the protected executor; the human then
+permanently revoked the exact delegated authority; a completely fresh
+equivalent Strands request re-verified Guardian identity and Credential B,
+received `REVOKED -> DENY`, and was rejected by the protected executor with no
+new receipt. The recording therefore demonstrates that running software and a
+valid agent identity do not imply continuing consequential authority.
+
 ### Capture 7 — Full provenance reconstruction
 
 **When:** Objective 7 is verified.
