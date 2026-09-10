@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import Any
 
 from ucii_guardian.action import ActionRequest
+from ucii_guardian.approval import (
+    HumanDecision,
+    OneOffApproval,
+)
 from ucii_guardian.authority import (
     AuthorityDecision,
     AuthorityDecisionResult,
@@ -52,42 +56,102 @@ class OfficeSupplyExecutionResult:
 def _require_exact_authority(
     action: ActionRequest,
     *,
-    authority: AuthorityDecisionResult,
+    authority: AuthorityDecisionResult | None,
+    approval: OneOffApproval | None,
 ) -> None:
-    """Require action-bound ACTIVE + ALLOW evidence before execution."""
+    """Require one valid execution-authority path for this exact action."""
 
-    if not isinstance(
-        authority,
-        AuthorityDecisionResult,
-    ):
+    if authority is not None and approval is not None:
         raise GuardianExecutionError(
-            "Protected execution requires Guardian authority evidence"
+            "Protected execution requires exactly one authority path"
         )
 
-    if authority.decision is not AuthorityDecision.ALLOW:
-        raise GuardianExecutionError(
-            "Protected execution requires ALLOW"
-        )
+    if authority is not None:
+        if not isinstance(
+            authority,
+            AuthorityDecisionResult,
+        ):
+            raise GuardianExecutionError(
+                "Protected execution requires Guardian authority evidence"
+            )
 
-    if authority.authority_state != "ACTIVE":
-        raise GuardianExecutionError(
-            "Protected execution requires ACTIVE delegated authority"
-        )
+        if authority.decision is not AuthorityDecision.ALLOW:
+            raise GuardianExecutionError(
+                "Protected execution requires ALLOW"
+            )
 
-    if authority.identity_id != action.guardian_identity:
-        raise GuardianExecutionError(
-            "Authority identity does not match action"
-        )
+        if authority.authority_state != "ACTIVE":
+            raise GuardianExecutionError(
+                "Protected execution requires ACTIVE delegated authority"
+            )
 
-    if authority.operation != action.operation:
-        raise GuardianExecutionError(
-            "Authority operation does not match action"
-        )
+        if authority.identity_id != action.guardian_identity:
+            raise GuardianExecutionError(
+                "Authority identity does not match action"
+            )
 
-    if authority.request_id != action.request_id:
-        raise GuardianExecutionError(
-            "Authority request ID does not match action"
-        )
+        if authority.operation != action.operation:
+            raise GuardianExecutionError(
+                "Authority operation does not match action"
+            )
+
+        if authority.request_id != action.request_id:
+            raise GuardianExecutionError(
+                "Authority request ID does not match action"
+            )
+
+        return
+
+    if approval is not None:
+        if not isinstance(
+            approval,
+            OneOffApproval,
+        ):
+            raise GuardianExecutionError(
+                "Protected execution requires valid one-off approval"
+            )
+
+        if approval.decision is not HumanDecision.APPROVE_ONCE:
+            raise GuardianExecutionError(
+                "Protected execution requires APPROVE_ONCE"
+            )
+
+        if approval.guardian_identity != action.guardian_identity:
+            raise GuardianExecutionError(
+                "Approval identity does not match action"
+            )
+
+        if approval.requester != action.requester:
+            raise GuardianExecutionError(
+                "Approval requester does not match action"
+            )
+
+        if approval.operation != action.operation:
+            raise GuardianExecutionError(
+                "Approval operation does not match action"
+            )
+
+        if approval.target != action.target:
+            raise GuardianExecutionError(
+                "Approval target does not match action"
+            )
+
+        if dict(approval.parameters) != dict(action.parameters):
+            raise GuardianExecutionError(
+                "Approval parameters do not match action"
+            )
+
+        if approval.request_id != action.request_id:
+            raise GuardianExecutionError(
+                "Approval request ID does not match action"
+            )
+
+        return
+
+    raise GuardianExecutionError(
+        "Protected execution requires delegated authority "
+        "or one-off human approval"
+    )
 
 
 def _validate_office_supply_action(
@@ -150,7 +214,8 @@ def _validate_office_supply_action(
 def execute_office_supply(
     action: ActionRequest,
     *,
-    authority: AuthorityDecisionResult,
+    authority: AuthorityDecisionResult | None = None,
+    approval: OneOffApproval | None = None,
     receipt_directory: Path,
 ) -> OfficeSupplyExecutionResult:
     """Execute exactly one bounded office-supply action.
@@ -162,6 +227,10 @@ def execute_office_supply(
     and domain guard succeeds. Existing receipt IDs fail closed so the same
     request cannot be replayed into a second execution.
 
+    Execution may proceed through either current ACTIVE + ALLOW delegated
+    authority or an exact-action human APPROVE_ONCE fact. The approval path
+    does not create or broaden standing UCII delegated authority.
+
     This function does not grant authority, authenticate Guardian, call an
     LLM, request human approval, or broaden the operation scope.
     """
@@ -169,6 +238,7 @@ def execute_office_supply(
     _require_exact_authority(
         action,
         authority=authority,
+        approval=approval,
     )
 
     quantity, max_price = (

@@ -7,6 +7,10 @@ import json
 import pytest
 
 from ucii_guardian.action import ActionRequest
+from ucii_guardian.approval import (
+    HumanDecision,
+    OneOffApproval,
+)
 from ucii_guardian.authority import (
     AuthorityDecision,
     AuthorityDecisionResult,
@@ -259,7 +263,10 @@ def test_llm_style_instruction_alone_cannot_execute(
         }
     )
 
-    with pytest.raises(TypeError):
+    with pytest.raises(
+        GuardianExecutionError,
+        match="requires delegated authority or one-off human approval",
+    ):
         execute_office_supply(
             action,
             receipt_directory=tmp_path,
@@ -392,3 +399,191 @@ def test_same_request_cannot_execute_twice(
         )
 
     assert len(list(tmp_path.iterdir())) == 1
+
+def _one_off_approval(
+    action: ActionRequest,
+    *,
+    guardian_identity: str | None = None,
+    requester: str | None = None,
+    operation: str | None = None,
+    target: str | None = None,
+    parameters: dict[str, object] | None = None,
+    request_id: str | None = None,
+) -> OneOffApproval:
+    return OneOffApproval(
+        guardian_identity=(
+            guardian_identity
+            if guardian_identity is not None
+            else action.guardian_identity
+        ),
+        requester=(
+            requester
+            if requester is not None
+            else action.requester
+        ),
+        operation=(
+            operation
+            if operation is not None
+            else action.operation
+        ),
+        target=(
+            target
+            if target is not None
+            else action.target
+        ),
+        parameters=(
+            parameters
+            if parameters is not None
+            else dict(action.parameters)
+        ),
+        request_id=(
+            request_id
+            if request_id is not None
+            else action.request_id
+        ),
+        decision=HumanDecision.APPROVE_ONCE,
+    )
+
+
+def test_one_off_approval_executes_exact_action(
+    tmp_path: Path,
+) -> None:
+    action = make_action()
+
+    result = execute_office_supply(
+        action,
+        approval=_one_off_approval(action),
+        receipt_directory=tmp_path,
+    )
+
+    assert result.executed is True
+    assert result.request_id == action.request_id
+    assert result.operation == action.operation
+    assert result.target == action.target
+    assert result.receipt_path.exists()
+
+
+def test_execution_rejects_missing_authority_and_approval(
+    tmp_path: Path,
+) -> None:
+    action = make_action()
+
+    with pytest.raises(
+        GuardianExecutionError,
+        match="requires delegated authority or one-off human approval",
+    ):
+        execute_office_supply(
+            action,
+            receipt_directory=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_execution_rejects_both_authority_paths(
+    tmp_path: Path,
+) -> None:
+    action = make_action()
+
+    with pytest.raises(
+        GuardianExecutionError,
+        match="exactly one authority path",
+    ):
+        execute_office_supply(
+            action,
+            authority=make_authority(action),
+            approval=_one_off_approval(action),
+            receipt_directory=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("guardian_identity", "guardian:other"),
+        ("requester", "human:other"),
+        ("operation", "guardian.other"),
+        ("target", "office-supply:other-item"),
+        (
+            "parameters",
+            {
+                "quantity": 2,
+                "max_price_usd": 80,
+            },
+        ),
+        ("request_id", "other-request"),
+    ],
+)
+def test_one_off_approval_must_match_exact_action(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    action = make_action()
+
+    kwargs = {field: value}
+
+    with pytest.raises(
+        GuardianExecutionError,
+        match="not match action",
+    ):
+        execute_office_supply(
+            action,
+            approval=_one_off_approval(
+                action,
+                **kwargs,
+            ),
+            receipt_directory=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_one_off_approval_cannot_execute_different_request(
+    tmp_path: Path,
+) -> None:
+    action = make_action()
+    approval = _one_off_approval(action)
+
+    other_action = ActionRequest(
+        requester=action.requester,
+        guardian_identity=action.guardian_identity,
+        operation=action.operation,
+        target=action.target,
+        parameters=dict(action.parameters),
+    )
+
+    assert other_action.request_id != action.request_id
+
+    with pytest.raises(
+        GuardianExecutionError,
+        match="Approval request ID does not match action",
+    ):
+        execute_office_supply(
+            other_action,
+            approval=approval,
+            receipt_directory=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_one_off_approval_does_not_broaden_standing_authority(
+    tmp_path: Path,
+) -> None:
+    action = make_action()
+
+    approval = _one_off_approval(action)
+
+    result = execute_office_supply(
+        action,
+        approval=approval,
+        receipt_directory=tmp_path,
+    )
+
+    assert result.executed is True
+    assert not hasattr(approval, "allowed_operations")
+    assert not hasattr(approval, "authority_id")
+    assert not hasattr(approval, "granted_by")
