@@ -369,10 +369,53 @@ Minimum event classes:
 
 Acceptance:
 
-- [ ] Complete demo lifecycle can be reconstructed.
-- [ ] Provenance explains why each consequential decision occurred.
-- [ ] Provenance does not create authority.
-- [ ] Sensitive secrets are excluded from records.
+- [x] Complete demo lifecycle can be reconstructed.
+- [x] Provenance explains why each consequential decision occurred.
+- [x] Provenance does not create authority.
+- [x] Sensitive secrets are excluded from records.
+
+**Verified completion evidence — 2026-09-10:**
+
+- Guardian now has an append-only durable JSONL provenance ledger with validated
+  immutable event envelopes and request-scoped lifecycle reconstruction.
+- The Objective 7 vocabulary covers request receipt, UCII identity verification,
+  authority checks, authorization, escalation, human approval/denial, execution,
+  revocation observation, and execution refusal.
+- Provenance is observational only: it cannot authenticate Guardian, create or
+  mutate authority, make human decisions, invoke Strands, or execute actions.
+- Sensitive secret-bearing fields are rejected before persistence.
+- Guardian's provenance-aware runtime workflow performs fresh Strands intent
+  normalization, fresh UCII identity verification, and a fresh UCII delegated
+  authority check for each request before consequential execution.
+- Objective 7D targeted provenance/workflow regression: `52 passed`.
+- Final full Guardian regression before live proof: `167 passed`.
+- Live lifecycle A used real AWS Strands and real public UCII verification for
+  exceptional request `ed0a9027-6bdc-4be1-aebf-41a589b69399`.
+  UCII returned `NOT_GRANTED -> ESCALATION_REQUIRED`; exact human
+  `APPROVE_ONCE` then permitted one protected execution, recorded durably as:
+  `REQUEST_RECEIVED -> IDENTITY_VERIFIED -> AUTHORITY_CHECKED -> ESCALATED ->
+  HUMAN_APPROVED -> EXECUTION_STARTED -> EXECUTION_COMPLETED`.
+- Live lifecycle B used a fresh routine Strands request
+  `3179d65f-fdc8-4c35-bf5b-5fddf2574bea`.
+  Guardian re-verified its identity, UCII returned the existing authority as
+  `REVOKED -> DENY`, no execution occurred, and provenance reconstructed:
+  `REQUEST_RECEIVED -> IDENTITY_VERIFIED -> AUTHORITY_CHECKED ->
+  AUTHORITY_REVOKED -> EXECUTION_REFUSED`.
+- The live proof created or mutated no delegated authority, did not reactivate
+  revoked authority A, did not create replacement authority B, and Guardian did
+  not pay itself.
+- Durable live proof ledger:
+  `milestone7-20260910T213023Z.jsonl`.
+- Provenance foundation checkpoint:
+  `85562d0e32750203f6b4736c0e302c287c9bc082`.
+- Lifecycle projection checkpoint:
+  `c370cfbc2145d328ab8513df345a7c93e668332e`.
+- Durable lifecycle recorder checkpoint:
+  `9bf06b638f04cc997f69ba2636d3164c99a1f6d5`.
+- Provenance-aware runtime workflow checkpoint:
+  `999f64dfe55db5de9b7af697a728bab0e2f8f0a8`.
+
+**Status: COMPLETE.**
 
 ## Objective 8 — Minimal demo interface
 
