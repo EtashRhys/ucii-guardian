@@ -156,6 +156,112 @@ Target structure:
 
 The public Devpost video must remain within the hackathon's maximum duration.
 
+## Canonical autonomy / authority story
+
+The Guardian demo should make this distinction prominent rather than burying it in implementation detail:
+
+> **We don't prevent AI from being autonomous. We prevent autonomy from becoming unlimited authority.**
+
+Guardian is not intended to suppress useful autonomy. An autonomous agent may continue reasoning, planning, running, calling non-consequential tools, and proposing work. What it must not be able to do is convert technical capability into unlimited consequential authority merely because the model wants to proceed.
+
+The practical control problem Guardian demonstrates is:
+
+> **How do we prevent an autonomous agent from taking consequential actions beyond the authority its human actually gave it?**
+
+Do **not** overclaim that Guardian solves every form of AI alignment, model behavior, or hypothetical rogue-AI risk. The narrower claim is stronger because the demo can prove it directly:
+
+> **UCII Guardian demonstrates how autonomous AI agents can remain under human-controlled, cryptographically verifiable, revocable authority even while the agents themselves continue operating autonomously.**
+
+A second canonical line should be explicit in the presentation:
+
+> **Capability is not authority.**
+
+The model may still work. The Strands process may still be running. The agent may still know how to invoke a tool. It may still have network connectivity, credentials, or access to a payment mechanism. None of those facts independently establish permission to perform a particular consequential action.
+
+Guardian makes several UCII distinctions visible to a judge through cause and effect:
+
+- identity is not authentication;
+- authentication is not authorization;
+- authorization is not execution;
+- capability is not authority;
+- payment proves settlement, not permission.
+
+The architectural point is that the consequential authority decision is evaluated outside the agent's probabilistic reasoning loop. Guardian should not depend on a prompt such as `never spend more than $25` as the security boundary. The agent proposes the action; the deterministic authority boundary decides whether the action is permitted.
+
+### Recommended cause-and-effect sequence
+
+The demo should make the control model understandable before explaining the cryptography:
+
+```text
+$12.40 REQUEST
+    -> WITHIN DELEGATED AUTHORITY
+    -> ALLOW
+    -> NO HUMAN INTERRUPTION
+
+$89.00 REQUEST
+    -> OUTSIDE DELEGATED AUTHORITY
+    -> STOP / ESCALATE
+    -> HUMAN DECISION
+
+HUMAN REVOKES AUTHORITY
+    -> AGENT REMAINS RUNNING
+    -> AGENT TRIES AGAIN
+    -> CURRENT AUTHORITY CHECK FAILS
+    -> DENIED
+```
+
+The revocation moment should be explained explicitly:
+
+> **The agent is still running. Its model still works. It still knows how to request the action. What changed is its authority. The human revoked it, so the consequential action cannot proceed.**
+
+This demonstrates another important line:
+
+> **Running software does not equal continuing authority.**
+
+### Why this matters beyond purchasing
+
+The purchasing workflow is deliberately simple, but the demonstrated authority pattern generalizes to consequential autonomous actions involving:
+
+- money and payments;
+- data access or disclosure;
+- communications;
+- contracts and documents;
+- infrastructure changes and software deployment;
+- other agents and tools;
+- devices, robots, vehicles, and industrial systems.
+
+The broader question remains the same:
+
+> **Does this autonomous principal currently possess authority for this specific consequential action under the applicable constraints?**
+
+The demo should explain this broader relevance without adding additional hackathon workflows or expanding implementation scope.
+
+### Judging significance
+
+The strongest contrast is not "our agent can do more." It is:
+
+> **The industry is making agents more capable. Guardian demonstrates how humans can let them use that capability without granting unlimited authority.**
+
+This supports the judging story directly:
+
+- **Technological Implementation:** real Strands behavior combined with UCII identity, authority enforcement, human escalation, revocation, and attributable evidence;
+- **Design:** routine authorized work proceeds quietly, while only insufficient-authority cases interrupt the human;
+- **Potential Impact:** the authority model applies to many consequential autonomous workflows;
+- **Creativity & Originality:** Guardian is a human authority/control layer for autonomous agents rather than another task-performing assistant;
+- **Presentation:** judges can see `$12.40 -> allow`, `$89 -> escalate`, and `revoke -> deny` before any architecture lecture.
+
+### Suggested opening and closing framing
+
+Potential opening:
+
+> **AI agents are becoming capable of doing real work on our behalf. But capability is not authority. UCII Guardian lets an agent remain autonomous without allowing that autonomy to become unlimited authority.**
+
+Potential closing:
+
+> **We don't prevent AI from being autonomous. We prevent autonomy from becoming unlimited authority.**
+
+These are presentation notes, not permission to add features. The stronger story changes how the existing minimum Guardian vertical slice is demonstrated; it does **not** expand what must be built before the hackathon deadline.
+
 ## Assistant/operator reminder protocol
 
 Before beginning work that is expected to complete one of the capture milestones above, explicitly flag it in the development session:
