@@ -222,11 +222,65 @@ Acceptance:
 
 Acceptance:
 
-- [ ] Guardian produces a clear escalation request.
-- [ ] Human can approve or deny.
-- [ ] Denial causes no execution.
-- [ ] Approval is bounded to the exceptional action by default.
-- [ ] Approval does not silently become broad standing authority.
+- [x] Guardian produces a clear escalation request.
+- [x] Human can approve or deny.
+- [x] Denial causes no execution.
+- [x] Approval is bounded to the exceptional action by default.
+- [x] Approval does not silently become broad standing authority.
+
+**Verified completion evidence — 2026-09-10:**
+
+- Guardian implements a bounded escalation contract that accepts only an
+  existing `ESCALATION_REQUIRED` decision backed by authoritative UCII state
+  `NOT_GRANTED`; `ALLOW`, `REVOKED`, `EXPIRED`, and `INVALID` cannot enter the
+  human-approval path.
+- Human review supports exactly two decisions: `APPROVE_ONCE` and `DENY`.
+  Automated Objective 5 tests prove `DENY` creates no approval fact and causes
+  no protected execution.
+- `APPROVE_ONCE` is bound to the exact Guardian identity, requester,
+  operation, target, parameters, and request ID. It is not a standing
+  delegated-authority record and cannot broaden UCII authority.
+- The protected office-supply executor accepts the exceptional operation
+  `guardian.purchase.office_supply.exception` only through exact one-off human
+  approval. A standing `ALLOW` authority result cannot execute that
+  exceptional operation.
+- A real live AWS Strands run normalized explicit exceptional human intent into
+  request ID `1c4f0661-3a49-413c-852a-5e65935a31be` for exact operation
+  `guardian.purchase.office_supply.exception` and target
+  `office-supply:printer-cartridge`.
+- Guardian then verified its real UCII identity and active Credential B through
+  the public UCII SDK/HTTPS boundary. UCII returned delegated authority state
+  `NOT_GRANTED`, which Guardian mapped to `ESCALATION_REQUIRED`.
+- Before human judgment, no execution occurred and no durable receipt existed.
+- The human explicitly entered `APPROVE_ONCE` at the terminal. The model did
+  not grant authority, make the human decision, or directly execute.
+- The resulting exact-action one-off approval unlocked one protected execution
+  and created durable receipt
+  `guardian-office-supply-1c4f0661-3a49-413c-852a-5e65935a31be`.
+- A fresh public UCII authority check after execution still returned
+  `NOT_GRANTED` / `ESCALATION_REQUIRED`, proving the one-off approval did not
+  become or silently create broad standing authority.
+- Reuse of the same one-off approval for the same request was denied with
+  `Protected action has already been executed`, proving the approved action
+  could not be replayed into a second execution.
+- No standing UCII authority record was mutated, no controller authority was
+  used, Guardian did not pay itself, and the private ML-DSA-65 key remained in
+  local Guardian custody.
+- Final Objective 5 composition regression before live proof: `58 passed`.
+- Final Objectives 3-5 composition regression before live proof: `78 passed`.
+- Final full Guardian regression before live proof: `115 passed`.
+- Bounded escalation contract checkpoint:
+  `72589b47397915fec50d200b897c8f4d55d841ed`.
+- One-off approval execution-gate checkpoint:
+  `00d53c1676f69526abc33fca0d463384dbeb970a`.
+- Human escalation decision-flow checkpoint:
+  `d5a7a898e3abba6256f3e9806266bf3efa813e31`.
+- Exceptional human-approved action checkpoint:
+  `d2fa31e2296897988be27a9804ec10656ed0d04a`.
+- Screen-record milestones 4 and 5 were captured from the successful live
+  `Strands -> UCII NOT_GRANTED -> HUMAN APPROVE_ONCE -> EXECUTE` proof.
+
+**Status: COMPLETE.**
 
 ## Objective 6 — Revocation proof
 
