@@ -116,10 +116,46 @@ check_authority(action) -> ALLOW | ESCALATION_REQUIRED | DENY
 
 Acceptance:
 
-- [ ] In-scope active authority returns ALLOW.
-- [ ] Legitimate but out-of-scope action returns ESCALATION_REQUIRED.
-- [ ] Revoked/expired/invalid/unverifiable authority returns DENY.
-- [ ] Authentication/verification alone never returns ALLOW.
+- [x] In-scope active authority returns ALLOW.
+- [x] Legitimate but out-of-scope action returns ESCALATION_REQUIRED.
+- [x] Revoked/expired/invalid/unverifiable authority returns DENY.
+- [x] Authentication/verification alone never returns ALLOW.
+
+**Verified completion evidence — 2026-09-10:**
+
+- Guardian implements the narrow `check_authority(action)` adapter through the
+  public `ucii-sdk` delegated-authority boundary; no private UCII server import
+  or execution shortcut is present.
+- The Guardian-held ML-DSA-65 credential signs a canonical representation of
+  the proposed `ActionRequest`, binding the proof to its identity, operation,
+  target, parameters, request ID, requester, and request timestamp.
+- Canonical mapping is fail-closed: `ACTIVE -> ALLOW`,
+  `NOT_GRANTED -> ESCALATION_REQUIRED`, and
+  `REVOKED` / `EXPIRED` / `INVALID -> DENY`.
+- Inconsistent, malformed, unknown, or failed UCII authority responses do not
+  produce `ALLOW`.
+- Live negative production proof established that Guardian can be
+  `UCII_VERIFIED` with its active cryptographically proven Credential B while
+  UCII returns `NOT_GRANTED`; Guardian returned `ESCALATION_REQUIRED` and no
+  execution occurred. This proves authentication/verification alone is not
+  action authorization.
+- One bounded production demo authority was then established for Guardian
+  identity `35c1db3d-61d7-4d0d-a5d7-db3ab7f79520`, scoped only to exact
+  operation `guardian.purchase.office_supply`; no controller, payment,
+  credential-lifecycle, approval, or execution authority was created by that
+  grant.
+- Live positive production proof then returned authority state `ACTIVE` and
+  Guardian decision `ALLOW` through the real public UCII SDK/HTTPS boundary,
+  while the authority check itself still performed no execution.
+- The active demo authority record created for this proof is
+  `bea80670-e7ea-4176-a491-e3c0130d00cf`.
+- Final targeted Objective 3 authority regression: `20 passed`.
+- Final Objective 2 + 3 composition regression: `27 passed`.
+- Final full Guardian regression: `54 passed`.
+- Verified implementation checkpoint:
+  `8dad3a8e29d379b5dcbc409dc3d8d89b62d0e353`.
+
+**Status: COMPLETE.**
 
 ## Objective 4 — Protected executor
 
