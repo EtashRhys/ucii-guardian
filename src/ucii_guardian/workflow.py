@@ -62,6 +62,137 @@ class GuardianWorkflowOutcome:
     provenance: tuple[ProvenanceEvent, ...]
 
 
+
+def continue_guardian_escalation(
+    *,
+    outcome: GuardianWorkflowOutcome,
+    decision: HumanDecision,
+    recorder: GuardianProvenanceRecorder,
+    receipt_directory: Path,
+) -> GuardianWorkflowOutcome:
+    """Continue one exact previously-established pending escalation.
+
+    This boundary never invokes Strands, reinterprets human intent, creates a
+    new ActionRequest, or mutates standing UCII authority.
+    """
+
+    if not isinstance(
+        recorder,
+        GuardianProvenanceRecorder,
+    ):
+        raise TypeError(
+            "recorder must be GuardianProvenanceRecorder"
+        )
+
+    if not isinstance(
+        outcome,
+        GuardianWorkflowOutcome,
+    ):
+        raise TypeError(
+            "outcome must be GuardianWorkflowOutcome"
+        )
+
+    if outcome.escalation is None:
+        raise ValueError(
+            "Guardian continuation requires a pending escalation"
+        )
+
+    if outcome.human_decision is not None:
+        raise ValueError(
+            "Guardian escalation already has a human decision"
+        )
+
+    if outcome.execution is not None:
+        raise ValueError(
+            "Guardian escalation has already executed"
+        )
+
+    if (
+        outcome.authority.decision
+        is not AuthorityDecision.ESCALATION_REQUIRED
+    ):
+        raise ValueError(
+            "Guardian continuation requires ESCALATION_REQUIRED"
+        )
+
+    if outcome.authority.authority_state != "NOT_GRANTED":
+        raise ValueError(
+            "Guardian continuation requires NOT_GRANTED authority"
+        )
+
+    if outcome.escalation.request_id != outcome.action.request_id:
+        raise ValueError(
+            "Escalation request ID does not match action"
+        )
+
+    existing_history = recorder.history_for_request(
+        outcome.action.request_id
+    )
+
+    if existing_history != outcome.provenance:
+        raise ValueError(
+            "Pending escalation provenance does not match recorder"
+        )
+
+    decision_result = decide_escalation(
+        outcome.escalation,
+        decision=decision,
+    )
+
+    recorder.record_human_decision(
+        outcome.action,
+        escalation=outcome.escalation,
+        result=decision_result,
+    )
+
+    if decision_result.decision is HumanDecision.DENY:
+        return GuardianWorkflowOutcome(
+            action=outcome.action,
+            identity=outcome.identity,
+            authority=outcome.authority,
+            escalation=outcome.escalation,
+            human_decision=decision_result,
+            execution=None,
+            provenance=recorder.history_for_request(
+                outcome.action.request_id
+            ),
+        )
+
+    approval = decision_result.approval
+
+    if approval is None:
+        raise RuntimeError(
+            "APPROVE_ONCE did not produce approval evidence"
+        )
+
+    recorder.record_execution_started(
+        outcome.action,
+        authority_path="HUMAN_APPROVE_ONCE",
+    )
+
+    execution = execute_office_supply(
+        outcome.action,
+        approval=approval,
+        receipt_directory=receipt_directory,
+    )
+
+    recorder.record_execution_completed(
+        outcome.action,
+        execution=execution,
+    )
+
+    return GuardianWorkflowOutcome(
+        action=outcome.action,
+        identity=outcome.identity,
+        authority=outcome.authority,
+        escalation=outcome.escalation,
+        human_decision=decision_result,
+        execution=execution,
+        provenance=recorder.history_for_request(
+            outcome.action.request_id
+        ),
+    )
+
 def run_guardian_request(
     *,
     agent: Any,
@@ -191,74 +322,24 @@ def run_guardian_request(
         authority=authority,
     )
 
-    if human_decision is None:
-        return GuardianWorkflowOutcome(
-            action=action,
-            identity=identity,
-            authority=authority,
-            escalation=escalation,
-            human_decision=None,
-            execution=None,
-            provenance=recorder.history_for_request(
-                action.request_id
-            ),
-        )
-
-    decision_result = decide_escalation(
-        escalation,
-        decision=human_decision,
-    )
-
-    recorder.record_human_decision(
-        action,
-        escalation=escalation,
-        result=decision_result,
-    )
-
-    if decision_result.decision is HumanDecision.DENY:
-        return GuardianWorkflowOutcome(
-            action=action,
-            identity=identity,
-            authority=authority,
-            escalation=escalation,
-            human_decision=decision_result,
-            execution=None,
-            provenance=recorder.history_for_request(
-                action.request_id
-            ),
-        )
-
-    approval = decision_result.approval
-
-    if approval is None:
-        raise RuntimeError(
-            "APPROVE_ONCE did not produce approval evidence"
-        )
-
-    recorder.record_execution_started(
-        action,
-        authority_path="HUMAN_APPROVE_ONCE",
-    )
-
-    execution = execute_office_supply(
-        action,
-        approval=approval,
-        receipt_directory=receipt_directory,
-    )
-
-    recorder.record_execution_completed(
-        action,
-        execution=execution,
-    )
-
-    return GuardianWorkflowOutcome(
+    pending = GuardianWorkflowOutcome(
         action=action,
         identity=identity,
         authority=authority,
         escalation=escalation,
-        human_decision=decision_result,
-        execution=execution,
+        human_decision=None,
+        execution=None,
         provenance=recorder.history_for_request(
             action.request_id
         ),
+    )
+
+    if human_decision is None:
+        return pending
+
+    return continue_guardian_escalation(
+        outcome=pending,
+        decision=human_decision,
+        recorder=recorder,
+        receipt_directory=receipt_directory,
     )

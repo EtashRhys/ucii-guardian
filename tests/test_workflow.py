@@ -746,3 +746,70 @@ def test_workflow_uses_only_public_guardian_security_modules() -> None:
 
     for marker in required:
         assert marker in source
+
+
+
+def test_pending_escalation_continuation_does_not_rerun_security_boundaries(
+    tmp_path: Path,
+    monkeypatch,
+    config,
+) -> None:
+    action = make_action(
+        request_id="request-browser-continuation",
+        operation=EXCEPTION_OPERATION,
+    )
+
+    authority = authority_fact(
+        action,
+        decision=AuthorityDecision.ESCALATION_REQUIRED,
+        state="NOT_GRANTED",
+    )
+
+    calls = install_boundaries(
+        monkeypatch,
+        action=action,
+        authority=authority,
+    )
+
+    recorder = GuardianProvenanceRecorder(
+        tmp_path / "provenance.jsonl"
+    )
+
+    pending = workflow.run_guardian_request(
+        agent=object(),
+        request="exceptional printer cartridge purchase",
+        config=config,
+        recorder=recorder,
+        receipt_directory=tmp_path / "receipts",
+    )
+
+    assert calls == [
+        "STRANDS",
+        "IDENTITY",
+        "AUTHORITY",
+    ]
+
+    calls.clear()
+
+    completed = workflow.continue_guardian_escalation(
+        outcome=pending,
+        decision=HumanDecision.APPROVE_ONCE,
+        recorder=recorder,
+        receipt_directory=tmp_path / "receipts",
+    )
+
+    assert calls == ["EXECUTE"]
+
+    assert completed.action is pending.action
+    assert completed.action.request_id == pending.action.request_id
+    assert completed.execution is not None
+
+    assert event_types(completed) == (
+        ProvenanceEventType.REQUEST_RECEIVED,
+        ProvenanceEventType.IDENTITY_VERIFIED,
+        ProvenanceEventType.AUTHORITY_CHECKED,
+        ProvenanceEventType.ESCALATED,
+        ProvenanceEventType.HUMAN_APPROVED,
+        ProvenanceEventType.EXECUTION_STARTED,
+        ProvenanceEventType.EXECUTION_COMPLETED,
+    )
