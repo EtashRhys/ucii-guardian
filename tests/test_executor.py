@@ -17,6 +17,7 @@ from ucii_guardian.authority import (
 )
 from ucii_guardian.executor import (
     GuardianExecutionError,
+    OFFICE_SUPPLY_EXCEPTION_OPERATION,
     OFFICE_SUPPLY_OPERATION,
     execute_office_supply,
 )
@@ -587,3 +588,86 @@ def test_one_off_approval_does_not_broaden_standing_authority(
     assert not hasattr(approval, "allowed_operations")
     assert not hasattr(approval, "authority_id")
     assert not hasattr(approval, "granted_by")
+
+def test_exceptional_office_supply_rejects_standing_authority(
+    tmp_path: Path,
+) -> None:
+    action = make_action(
+        operation=OFFICE_SUPPLY_EXCEPTION_OPERATION,
+    )
+
+    with pytest.raises(
+        GuardianExecutionError,
+        match="requires one-off human approval",
+    ):
+        execute_office_supply(
+            action,
+            authority=make_authority(action),
+            receipt_directory=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_exceptional_office_supply_executes_with_exact_one_off_approval(
+    tmp_path: Path,
+) -> None:
+    action = make_action(
+        operation=OFFICE_SUPPLY_EXCEPTION_OPERATION,
+    )
+
+    result = execute_office_supply(
+        action,
+        approval=_one_off_approval(action),
+        receipt_directory=tmp_path,
+    )
+
+    assert result.executed is True
+    assert result.operation == OFFICE_SUPPLY_EXCEPTION_OPERATION
+    assert result.target == action.target
+    assert result.request_id == action.request_id
+    assert result.receipt_path.exists()
+
+
+def test_exceptional_office_supply_still_enforces_domain_bounds(
+    tmp_path: Path,
+) -> None:
+    action = make_action(
+        operation=OFFICE_SUPPLY_EXCEPTION_OPERATION,
+        parameters={
+            "quantity": 11,
+            "max_price_usd": 80,
+        },
+    )
+
+    with pytest.raises(
+        GuardianExecutionError,
+        match="quantity is outside the executor boundary",
+    ):
+        execute_office_supply(
+            action,
+            approval=_one_off_approval(action),
+            receipt_directory=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_unrelated_operation_remains_rejected_with_one_off_approval(
+    tmp_path: Path,
+) -> None:
+    action = make_action(
+        operation="guardian.purchase.travel",
+    )
+
+    with pytest.raises(
+        GuardianExecutionError,
+        match="Unsupported protected execution operation",
+    ):
+        execute_office_supply(
+            action,
+            approval=_one_off_approval(action),
+            receipt_directory=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []

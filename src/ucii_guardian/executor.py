@@ -29,6 +29,9 @@ from ucii_guardian.authority import (
 
 
 OFFICE_SUPPLY_OPERATION = "guardian.purchase.office_supply"
+OFFICE_SUPPLY_EXCEPTION_OPERATION = (
+    "guardian.purchase.office_supply.exception"
+)
 OFFICE_SUPPLY_TARGET_PREFIX = "office-supply:"
 
 MAX_OFFICE_SUPPLY_QUANTITY = 10
@@ -67,6 +70,12 @@ def _require_exact_authority(
         )
 
     if authority is not None:
+        if action.operation == OFFICE_SUPPLY_EXCEPTION_OPERATION:
+            raise GuardianExecutionError(
+                "Exceptional office-supply action requires "
+                "one-off human approval"
+            )
+
         if not isinstance(
             authority,
             AuthorityDecisionResult,
@@ -159,7 +168,10 @@ def _validate_office_supply_action(
 ) -> tuple[int, float]:
     """Validate the one bounded consequential demo domain."""
 
-    if action.operation != OFFICE_SUPPLY_OPERATION:
+    if action.operation not in {
+        OFFICE_SUPPLY_OPERATION,
+        OFFICE_SUPPLY_EXCEPTION_OPERATION,
+    }:
         raise GuardianExecutionError(
             "Unsupported protected execution operation"
         )

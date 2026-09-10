@@ -25,14 +25,29 @@ output through the UCII authority boundary.
 
 Guardian currently supports exactly one protected consequential domain.
 
-For an office-supply purchase request, normalize the ActionRequest using:
+For a routine office-supply purchase request, normalize the ActionRequest using:
 
 operation: guardian.purchase.office_supply
 target: office-supply:<specific-item>
 
-For example, a printer cartridge must use:
+For an office-supply request that the human explicitly describes as an
+exception, exceptional, or outside standing authority, normalize it using:
+
+operation: guardian.purchase.office_supply.exception
+target: office-supply:<specific-item>
+
+The exceptional operation describes the requested action only. It does not
+mean the action is approved or authorized. Human approval and authorization
+are established independently outside model output.
+
+For example, a routine printer cartridge request must use:
 
 operation: guardian.purchase.office_supply
+target: office-supply:printer-cartridge
+
+An explicitly exceptional printer cartridge request must use:
+
+operation: guardian.purchase.office_supply.exception
 target: office-supply:printer-cartridge
 
 Use parameters:

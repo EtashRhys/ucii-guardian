@@ -115,7 +115,9 @@ def test_build_guardian_agent_binds_exact_ucii_identity(
     assert "authentication binding only" in prompt
     assert "does not mean" in prompt
     assert "guardian.purchase.office_supply" in prompt
+    assert "guardian.purchase.office_supply.exception" in prompt
     assert "office-supply:printer-cartridge" in prompt
+    assert "approved or authorized" in prompt
     assert "Do not emit generic operation names such as purchase" in prompt
     assert captured["tools"] == []
 
