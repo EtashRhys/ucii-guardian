@@ -163,6 +163,11 @@ def response_for(state):
         "operation": OPERATION,
         "credential_status": "ACTIVE",
         "authority_state": state,
+        "authority_id": (
+            "test-active-authority-id"
+            if state == "ACTIVE"
+            else None
+        ),
     }
 
 
@@ -440,6 +445,109 @@ def test_inconsistent_ucii_response_fails_closed(
         )
 
 
+def test_active_authority_retains_exact_ucii_authority_id(
+    config,
+    identity,
+    action,
+    install_boundary,
+):
+    response = response_for("ACTIVE")
+    response["authority_id"] = "guardian-authority-c"
+    FakeClient.response = response
+
+    result = check_authority(
+        action,
+        identity=identity,
+        config=config,
+    )
+
+    assert result.decision is AuthorityDecision.ALLOW
+    assert result.authority_state == "ACTIVE"
+    assert result.authority_id == "guardian-authority-c"
+
+
+@pytest.mark.parametrize(
+    "authority_id",
+    [
+        None,
+        "",
+        "   ",
+        123,
+    ],
+)
+def test_active_authority_without_valid_authority_id_fails_closed(
+    config,
+    identity,
+    action,
+    install_boundary,
+    authority_id,
+):
+    response = response_for("ACTIVE")
+    response["authority_id"] = authority_id
+    FakeClient.response = response
+
+    with pytest.raises(
+        GuardianAuthorityError,
+        match="authority ID",
+    ):
+        check_authority(
+            action,
+            identity=identity,
+            config=config,
+        )
+
+
+@pytest.mark.parametrize(
+    "authority_state",
+    [
+        "NOT_GRANTED",
+        "REVOKED",
+        "EXPIRED",
+        "INVALID",
+    ],
+)
+def test_non_active_authority_carries_no_authority_id(
+    config,
+    identity,
+    action,
+    install_boundary,
+    authority_state,
+):
+    response = response_for(authority_state)
+    response["authority_id"] = None
+    FakeClient.response = response
+
+    result = check_authority(
+        action,
+        identity=identity,
+        config=config,
+    )
+
+    assert result.authority_state == authority_state
+    assert result.authority_id is None
+
+
+def test_non_active_authority_with_authority_id_fails_closed(
+    config,
+    identity,
+    action,
+    install_boundary,
+):
+    response = response_for("REVOKED")
+    response["authority_id"] = "historical-authority"
+    FakeClient.response = response
+
+    with pytest.raises(
+        GuardianAuthorityError,
+        match="unexpectedly identified authority",
+    ):
+        check_authority(
+            action,
+            identity=identity,
+            config=config,
+        )
+
+
 def test_public_ucii_error_fails_closed(
     config,
     identity,
@@ -500,6 +608,7 @@ def test_result_carries_no_execution_grant(
     ) == {
         "decision",
         "authority_state",
+        "authority_id",
         "identity_id",
         "credential_fingerprint",
         "operation",

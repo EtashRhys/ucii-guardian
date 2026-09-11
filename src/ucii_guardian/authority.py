@@ -51,6 +51,7 @@ class AuthorityDecisionResult:
 
     decision: AuthorityDecision
     authority_state: str
+    authority_id: str | None
     identity_id: str
     credential_fingerprint: str
     operation: str
@@ -277,6 +278,25 @@ def check_authority(
                 "UCII authority state is invalid"
             )
 
+        authority_id = response.get(
+            "authority_id"
+        )
+
+        if authority_state == "ACTIVE":
+            if (
+                not isinstance(authority_id, str)
+                or not authority_id.strip()
+            ):
+                raise GuardianAuthorityError(
+                    "ACTIVE UCII authority response has no authority ID"
+                )
+
+            authority_id = authority_id.strip()
+        elif authority_id is not None:
+            raise GuardianAuthorityError(
+                "Non-active UCII authority response unexpectedly identified authority"
+            )
+
         decision = _map_authority_state(
             authority_state=authority_state,
             authorized=response.get(
@@ -290,6 +310,7 @@ def check_authority(
         return AuthorityDecisionResult(
             decision=decision,
             authority_state=authority_state,
+            authority_id=authority_id,
             identity_id=config.identity_id,
             credential_fingerprint=(
                 config.credential_fingerprint
