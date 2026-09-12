@@ -16,6 +16,12 @@ from starlette.responses import HTMLResponse
 from starlette.routing import Route
 
 from ucii_guardian.agent import build_guardian_agent
+from ucii_guardian.authority import AuthorityDecision
+from ucii_guardian.authority_lifecycle import (
+    AuthorityRevocationResult,
+    GuardianAuthorityLifecycleError,
+    revoke_active_authority,
+)
 from ucii_guardian.identity import GuardianIdentityConfig
 from ucii_guardian.provenance_recorder import GuardianProvenanceRecorder
 from ucii_guardian.approval import HumanDecision
@@ -36,7 +42,17 @@ class PendingEscalationContext:
     receipt_directory: Path
 
 
+@dataclass(frozen=True)
+class ActiveAuthorityContext:
+    """Trusted server-held ACTIVE authority available for revocation."""
+
+    outcome: GuardianWorkflowOutcome
+    request_value: str
+    config: GuardianIdentityConfig
+
+
 _pending_context: PendingEscalationContext | None = None
+_active_authority_context: ActiveAuthorityContext | None = None
 
 
 def _set_pending_context(
@@ -51,6 +67,17 @@ def _take_pending_context() -> PendingEscalationContext | None:
     context = _pending_context
     _pending_context = None
     return context
+
+
+def _set_active_authority_context(
+    context: ActiveAuthorityContext | None,
+) -> None:
+    global _active_authority_context
+    _active_authority_context = context
+
+
+def _get_active_authority_context() -> ActiveAuthorityContext | None:
+    return _active_authority_context
 
 
 def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
@@ -68,6 +95,7 @@ def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
             ),
             "approve_disabled": "disabled",
             "deny_disabled": "disabled",
+            "revoke_disabled": "disabled",
         }
 
     decision = escape(outcome.authority.decision.value)
@@ -130,6 +158,15 @@ def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
             "</li>"
         )
 
+    revoke_disabled = "disabled"
+
+    if (
+        outcome.authority.decision is AuthorityDecision.ALLOW
+        and outcome.authority.authority_state == "ACTIVE"
+        and outcome.authority.authority_id
+    ):
+        revoke_disabled = ""
+
     return {
         "decision": decision,
         "authority": authority,
@@ -138,6 +175,7 @@ def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
         "timeline": "".join(timeline_items),
         "approve_disabled": approve_disabled,
         "deny_disabled": deny_disabled,
+        "revoke_disabled": revoke_disabled,
     }
 
 
@@ -145,8 +183,28 @@ def render_guardian_page(
     *,
     outcome: GuardianWorkflowOutcome | None = None,
     request_value: str = "",
+    revocation: AuthorityRevocationResult | None = None,
+    lifecycle_message: str | None = None,
 ) -> str:
     state = _render_outcome(outcome)
+
+    if revocation is not None:
+        state["authority"] = "REVOKED"
+        state["revoke_disabled"] = "disabled"
+        state["reason"] = (
+            "Authority revoked. This delegated authority grant is no longer "
+            "valid. Guardian's UCII identity remains verified. Future "
+            "protected actions must perform a fresh authority check and will "
+            "be denied unless a new authority grant is issued."
+        )
+        state["timeline"] += (
+            "<li><strong>AUTHORITY_REVOKED</strong>"
+            "<span class=\"muted\">UCII authoritatively confirmed the "
+            "exact delegated authority as REVOKED.</span></li>"
+        )
+
+    if lifecycle_message is not None:
+        state["reason"] = lifecycle_message
 
     page = """<!doctype html>
 <html lang="en">
@@ -240,6 +298,10 @@ button {
 .deny {
     background: #df5f6b;
     color: #25080b;
+}
+.revoke {
+    background: #f0a45d;
+    color: #271305;
 }
 .actions {
     display: flex;
@@ -343,6 +405,12 @@ placeholder="Example: Purchase one printer cartridge under $80.">{request_value}
 <button class="deny" type="submit" name="decision" value="DENY" {deny_disabled}>Deny</button>
 </div>
 </form>
+
+<form method="post" action="/revoke">
+<div class="actions">
+<button class="revoke" type="submit" {revoke_disabled}>Revoke Authority</button>
+</div>
+</form>
 </aside>
 </div>
 
@@ -370,6 +438,7 @@ permission to execute a consequential action.
         "{timeline}": state["timeline"],
         "{approve_disabled}": state["approve_disabled"],
         "{deny_disabled}": state["deny_disabled"],
+        "{revoke_disabled}": state["revoke_disabled"],
     }
 
     for placeholder, value in replacements.items():
@@ -454,10 +523,65 @@ async def evaluate(request: Request) -> HTMLResponse:
     else:
         _set_pending_context(None)
 
+    if (
+        outcome.authority.decision is AuthorityDecision.ALLOW
+        and outcome.authority.authority_state == "ACTIVE"
+        and outcome.authority.authority_id
+    ):
+        _set_active_authority_context(
+            ActiveAuthorityContext(
+                outcome=outcome,
+                request_value=human_request,
+                config=config,
+            )
+        )
+    else:
+        _set_active_authority_context(None)
+
     return HTMLResponse(
         render_guardian_page(
             outcome=outcome,
             request_value=human_request,
+        )
+    )
+
+
+async def revoke(request: Request) -> HTMLResponse:
+    context = _get_active_authority_context()
+
+    if context is None:
+        return HTMLResponse(
+            render_guardian_page(),
+            status_code=409,
+        )
+
+    try:
+        result = revoke_active_authority(
+            authority=context.outcome.authority,
+            config=context.config,
+            reason="human_revoked_guardian_web_authority",
+        )
+    except GuardianAuthorityLifecycleError:
+        return HTMLResponse(
+            render_guardian_page(
+                outcome=context.outcome,
+                request_value=context.request_value,
+                lifecycle_message=(
+                    "Revocation failed closed. The delegated authority "
+                    "remains ACTIVE."
+                ),
+            ),
+            status_code=409,
+        )
+
+    _set_active_authority_context(None)
+    _set_pending_context(None)
+
+    return HTMLResponse(
+        render_guardian_page(
+            outcome=context.outcome,
+            request_value=context.request_value,
+            revocation=result,
         )
     )
 
@@ -502,6 +626,7 @@ app = Starlette(
     routes=[
         Route("/", homepage, methods=["GET"]),
         Route("/evaluate", evaluate, methods=["POST"]),
+        Route("/revoke", revoke, methods=["POST"]),
         Route("/decision", decide, methods=["POST"]),
     ],
 )

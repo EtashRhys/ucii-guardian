@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,20 +19,17 @@ from ucii_guardian.authority_lifecycle import (
 from ucii_guardian.identity import GuardianIdentityConfig
 
 
-IDENTITY_ID = (
-    "35c1db3d-61d7-4d0d-a5d7-db3ab7f79520"
-)
-CREDENTIAL_ID = (
-    "9e2ee693-ca6d-426a-80ae-cf226e69c1e6"
-)
+IDENTITY_ID = "35c1db3d-61d7-4d0d-a5d7-db3ab7f79520"
+CREDENTIAL_ID = "9e2ee693-ca6d-426a-80ae-cf226e69c1e6"
 FINGERPRINT = (
     "9d14f6f5a53629709afb1574ef9d14be"
     "ad52d6da5ecb1334cfaf930abd321559"
 )
 AUTHORITY_ID = "guardian-authority-c"
 OPERATION = "guardian.purchase.office_supply"
-REASON = "Human operator revoked delegated routine authority."
-CONTROLLER = "test-controller-authority-secret"
+REASON = "human_revoked_guardian_web_authority"
+
+ENTITLEMENT_PROOF = object()
 
 
 class FakeAuthorization:
@@ -88,8 +86,7 @@ def config(tmp_path: Path) -> GuardianIdentityConfig:
         credential_id=CREDENTIAL_ID,
         credential_fingerprint=FINGERPRINT,
         custody_path=(
-            tmp_path
-            / "guardian-mldsa65-v2.json"
+            tmp_path / "guardian-mldsa65-v2.json"
         ),
     )
 
@@ -103,7 +100,7 @@ def active_authority() -> AuthorityDecisionResult:
         identity_id=IDENTITY_ID,
         credential_fingerprint=FINGERPRINT,
         operation=OPERATION,
-        request_id="request-authority-revoke",
+        request_id="guardian-revoke-test-request",
     )
 
 
@@ -114,14 +111,19 @@ def response_for(**overrides):
         "authority_state": "REVOKED",
         "allowed_operations": [OPERATION],
         "granted_by": "guardian-human-owner",
-        "revoked_at": "2026-09-11T17:30:00+00:00",
+        "revoked_at": "2026-09-11T20:00:00+00:00",
         "revocation_reason": REASON,
     }
+
     response.update(overrides)
+
     return response
 
 
-def install_fake_client(monkeypatch, response):
+def install_fakes(
+    monkeypatch,
+    response,
+):
     FakeAuthorization.response = response
 
     monkeypatch.setattr(
@@ -130,13 +132,53 @@ def install_fake_client(monkeypatch, response):
         FakeClient,
     )
 
+    signer = SimpleNamespace(
+        fingerprint=FINGERPRINT,
+    )
 
-def test_revoke_active_authority_uses_exact_public_sdk_boundary(
+    monkeypatch.setattr(
+        lifecycle,
+        "load_guardian_signing_provider",
+        lambda path: signer,
+    )
+
+    monkeypatch.setattr(
+        lifecycle,
+        "generate_entitlement_nonce",
+        lambda: "synthetic-entitlement-nonce",
+    )
+
+    proof_calls = []
+
+    def fake_create_entitlement_proof(
+        challenge,
+        *,
+        signing_provider,
+    ):
+        proof_calls.append(
+            {
+                "challenge": challenge,
+                "signer": signing_provider,
+            }
+        )
+
+        return ENTITLEMENT_PROOF
+
+    monkeypatch.setattr(
+        lifecycle,
+        "create_entitlement_proof",
+        fake_create_entitlement_proof,
+    )
+
+    return proof_calls
+
+
+def test_revoke_uses_exact_public_sdk_entitlement_boundary(
     monkeypatch,
     config,
     active_authority,
 ) -> None:
-    install_fake_client(
+    proof_calls = install_fakes(
         monkeypatch,
         response_for(),
     )
@@ -144,28 +186,44 @@ def test_revoke_active_authority_uses_exact_public_sdk_boundary(
     result = revoke_active_authority(
         authority=active_authority,
         config=config,
-        controller_authority=CONTROLLER,
         reason=REASON,
     )
 
     assert len(FakeClient.instances) == 1
-    assert FakeClient.instances[0].base_url == config.base_url
-    assert FakeClient.instances[0].timeout == 30.0
+
+    assert FakeClient.instances[0].base_url == (
+        config.base_url
+    )
 
     assert FakeAuthorization.calls == [
         {
             "authority_id": AUTHORITY_ID,
             "reason": REASON,
-            "controller_authority": CONTROLLER,
+            "service_entitlement_proof": ENTITLEMENT_PROOF,
         }
     ]
+
+    assert (
+        "controller_authority"
+        not in FakeAuthorization.calls[0]
+    )
+
+    assert len(proof_calls) == 1
+
+    challenge = proof_calls[0]["challenge"]
+
+    assert challenge.subject_identity_id == IDENTITY_ID
+    assert challenge.credential_fingerprint == FINGERPRINT
+    assert challenge.method == "POST"
+    assert challenge.path == (
+        "/v1/authorization/delegated/"
+        f"{AUTHORITY_ID}/revoke"
+    )
 
     assert result.authority_id == AUTHORITY_ID
     assert result.identity_id == IDENTITY_ID
     assert result.authority_state == "REVOKED"
     assert result.allowed_operations == (OPERATION,)
-    assert result.granted_by == "guardian-human-owner"
-    assert result.revoked_at == "2026-09-11T17:30:00+00:00"
     assert result.revocation_reason == REASON
 
 
@@ -187,7 +245,7 @@ def test_untrusted_or_non_active_authority_fails_before_transport(
     field,
     value,
 ) -> None:
-    install_fake_client(
+    install_fakes(
         monkeypatch,
         response_for(),
     )
@@ -203,6 +261,7 @@ def test_untrusted_or_non_active_authority_fails_before_transport(
         "operation": active_authority.operation,
         "request_id": active_authority.request_id,
     }
+
     values[field] = value
 
     candidate = AuthorityDecisionResult(
@@ -215,39 +274,6 @@ def test_untrusted_or_non_active_authority_fails_before_transport(
         revoke_active_authority(
             authority=candidate,
             config=config,
-            controller_authority=CONTROLLER,
-            reason=REASON,
-        )
-
-    assert FakeAuthorization.calls == []
-
-
-@pytest.mark.parametrize(
-    "controller_authority",
-    [
-        "",
-        "   ",
-        None,
-    ],
-)
-def test_missing_controller_authority_fails_before_transport(
-    monkeypatch,
-    config,
-    active_authority,
-    controller_authority,
-) -> None:
-    install_fake_client(
-        monkeypatch,
-        response_for(),
-    )
-
-    with pytest.raises(
-        GuardianAuthorityLifecycleError
-    ):
-        revoke_active_authority(
-            authority=active_authority,
-            config=config,
-            controller_authority=controller_authority,
             reason=REASON,
         )
 
@@ -262,13 +288,13 @@ def test_missing_controller_authority_fails_before_transport(
         None,
     ],
 )
-def test_missing_revocation_reason_fails_before_transport(
+def test_missing_reason_fails_before_transport(
     monkeypatch,
     config,
     active_authority,
     reason,
 ) -> None:
-    install_fake_client(
+    install_fakes(
         monkeypatch,
         response_for(),
     )
@@ -279,8 +305,38 @@ def test_missing_revocation_reason_fails_before_transport(
         revoke_active_authority(
             authority=active_authority,
             config=config,
-            controller_authority=CONTROLLER,
             reason=reason,
+        )
+
+    assert FakeAuthorization.calls == []
+
+
+def test_guardian_custody_fingerprint_mismatch_fails_closed(
+    monkeypatch,
+    config,
+    active_authority,
+) -> None:
+    install_fakes(
+        monkeypatch,
+        response_for(),
+    )
+
+    monkeypatch.setattr(
+        lifecycle,
+        "load_guardian_signing_provider",
+        lambda path: SimpleNamespace(
+            fingerprint="different-fingerprint",
+        ),
+    )
+
+    with pytest.raises(
+        GuardianAuthorityLifecycleError,
+        match="fingerprint",
+    ):
+        revoke_active_authority(
+            authority=active_authority,
+            config=config,
+            reason=REASON,
         )
 
     assert FakeAuthorization.calls == []
@@ -314,17 +370,17 @@ def test_missing_revocation_reason_fails_before_transport(
             revoked_at="",
         ),
         response_for(
-            revocation_reason="different reason",
+            revocation_reason="different-reason",
         ),
     ],
 )
-def test_malformed_or_mismatched_ucii_response_fails_closed(
+def test_invalid_ucii_revocation_response_fails_closed(
     monkeypatch,
     config,
     active_authority,
     response,
 ) -> None:
-    install_fake_client(
+    install_fakes(
         monkeypatch,
         response,
     )
@@ -335,7 +391,6 @@ def test_malformed_or_mismatched_ucii_response_fails_closed(
         revoke_active_authority(
             authority=active_authority,
             config=config,
-            controller_authority=CONTROLLER,
             reason=REASON,
         )
 
@@ -345,9 +400,9 @@ def test_transport_failure_fails_closed(
     config,
     active_authority,
 ) -> None:
-    install_fake_client(
+    install_fakes(
         monkeypatch,
-        RuntimeError("network failure"),
+        RuntimeError("synthetic transport failure"),
     )
 
     with pytest.raises(
@@ -357,27 +412,5 @@ def test_transport_failure_fails_closed(
         revoke_active_authority(
             authority=active_authority,
             config=config,
-            controller_authority=CONTROLLER,
             reason=REASON,
         )
-
-
-def test_result_does_not_retain_controller_authority(
-    monkeypatch,
-    config,
-    active_authority,
-) -> None:
-    install_fake_client(
-        monkeypatch,
-        response_for(),
-    )
-
-    result = revoke_active_authority(
-        authority=active_authority,
-        config=config,
-        controller_authority=CONTROLLER,
-        reason=REASON,
-    )
-
-    assert "controller_authority" not in result.__dataclass_fields__
-    assert CONTROLLER not in repr(result)

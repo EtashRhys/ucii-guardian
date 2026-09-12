@@ -12,7 +12,7 @@ dependencies = [
   "liboqs-python==0.16.0",
   "starlette>=1.0.0",
   "uvicorn>=0.52.0",
-  "ucii-sdk @ git+https://github.com/EtashRhys/UCII.git@b7c53e08b1960c6a213effefa51b748742456df7#subdirectory=sdk",
+  "ucii-sdk @ git+https://github.com/EtashRhys/UCII.git@da38f8b5a6be399d1a134bb9ebba47a13e821483#subdirectory=sdk",
 ]
 
 [project.optional-dependencies]

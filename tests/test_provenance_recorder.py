@@ -80,6 +80,14 @@ def make_authority(
     return AuthorityDecisionResult(
         decision=decision,
         authority_state=state,
+        authority_id=(
+            "test-active-authority"
+            if (
+                decision is AuthorityDecision.ALLOW
+                and state == "ACTIVE"
+            )
+            else None
+        ),
         identity_id=action.guardian_identity,
         credential_fingerprint=FINGERPRINT,
         operation=action.operation,

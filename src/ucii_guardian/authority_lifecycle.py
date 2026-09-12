@@ -1,33 +1,39 @@
 """Guardian delegated-authority lifecycle boundary.
 
-This module may mutate delegated action authority only through the public UCII
-SDK lifecycle surface.
+Guardian may request revocation only through the public UCII SDK boundary.
 
-It does not authenticate Guardian, grant authority, reactivate revoked
-authority, execute consequential actions, obtain human approval, invoke
-Strands, or expose controller authority to the browser or provenance layer.
+Guardian supplies its own fresh service-entitlement proof for economic access.
+It never receives, stores, transports, or supplies UCII controller authority.
+Lifecycle authority remains inside UCII's protected lifecycle boundary.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
-from ucii import UCIIClient
+from ucii import (
+    EntitlementProofChallenge,
+    UCIIClient,
+    create_entitlement_proof,
+    generate_entitlement_nonce,
+)
 
 from ucii_guardian.authority import (
     AuthorityDecision,
     AuthorityDecisionResult,
 )
+from ucii_guardian.custody import load_guardian_signing_provider
 from ucii_guardian.identity import GuardianIdentityConfig
 
 
 class GuardianAuthorityLifecycleError(RuntimeError):
-    """Raised when an authority lifecycle mutation cannot be established safely."""
+    """Guardian lifecycle request failed closed."""
 
 
 @dataclass(frozen=True)
 class AuthorityRevocationResult:
-    """Authoritative confirmation that one exact authority was revoked."""
+    """Authoritative UCII confirmation of exact delegated revocation."""
 
     authority_id: str
     identity_id: str
@@ -38,11 +44,7 @@ class AuthorityRevocationResult:
     revocation_reason: str
 
 
-def _non_empty(
-    value: object,
-    *,
-    field_name: str,
-) -> str:
+def _non_empty(value: object, *, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise GuardianAuthorityLifecycleError(
             f"{field_name} must be a non-empty string"
@@ -51,35 +53,59 @@ def _non_empty(
     return value.strip()
 
 
+def _revocation_entitlement(
+    *,
+    authority_id: str,
+    config: GuardianIdentityConfig,
+):
+    signer = load_guardian_signing_provider(
+        config.custody_path
+    )
+
+    if signer.fingerprint != config.credential_fingerprint:
+        raise GuardianAuthorityLifecycleError(
+            "Guardian custody fingerprint does not match configured credential"
+        )
+
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(
+        seconds=config.proof_lifetime_seconds
+    )
+
+    challenge = EntitlementProofChallenge(
+        nonce=generate_entitlement_nonce(),
+        subject_identity_id=config.identity_id,
+        credential_fingerprint=config.credential_fingerprint,
+        method="POST",
+        path=(
+            "/v1/authorization/delegated/"
+            f"{authority_id}/revoke"
+        ),
+        issued_at=now.isoformat(),
+        expires_at=expires_at.isoformat(),
+    )
+
+    return create_entitlement_proof(
+        challenge,
+        signing_provider=signer,
+    )
+
+
 def revoke_active_authority(
     *,
     authority: AuthorityDecisionResult,
     config: GuardianIdentityConfig,
-    controller_authority: str,
     reason: str,
 ) -> AuthorityRevocationResult:
-    """Permanently revoke one exact trusted ACTIVE delegated authority.
-
-    The authority ID comes only from an already-established Guardian authority
-    result. The caller supplies controller authority from a server-side secret
-    boundary; this function never persists or returns that secret.
-
-    Revocation uses only the public UCII SDK.
-    """
+    """Request permanent revocation of one exact trusted ACTIVE authority."""
 
     try:
-        if not isinstance(
-            authority,
-            AuthorityDecisionResult,
-        ):
+        if not isinstance(authority, AuthorityDecisionResult):
             raise GuardianAuthorityLifecycleError(
                 "Revocation requires established Guardian authority evidence"
             )
 
-        if not isinstance(
-            config,
-            GuardianIdentityConfig,
-        ):
+        if not isinstance(config, GuardianIdentityConfig):
             raise GuardianAuthorityLifecycleError(
                 "Revocation requires Guardian identity configuration"
             )
@@ -101,7 +127,7 @@ def revoke_active_authority(
 
         if authority.identity_id != config.identity_id:
             raise GuardianAuthorityLifecycleError(
-                "Authority identity does not match Guardian configuration"
+                "Authority identity does not match Guardian"
             )
 
         operation = _non_empty(
@@ -109,26 +135,24 @@ def revoke_active_authority(
             field_name="operation",
         )
 
-        controller_secret = _non_empty(
-            controller_authority,
-            field_name="controller_authority",
-        )
-
         normalized_reason = _non_empty(
             reason,
             field_name="reason",
+        )
+
+        entitlement = _revocation_entitlement(
+            authority_id=authority_id,
+            config=config,
         )
 
         with UCIIClient(
             base_url=config.base_url,
             timeout=30.0,
         ) as client:
-            response = (
-                client.authorization.revoke_delegated(
-                    authority_id=authority_id,
-                    reason=normalized_reason,
-                    controller_authority=controller_secret,
-                )
+            response = client.authorization.revoke_delegated(
+                authority_id=authority_id,
+                reason=normalized_reason,
+                service_entitlement_proof=entitlement,
             )
 
         if not isinstance(response, dict):
@@ -136,36 +160,22 @@ def revoke_active_authority(
                 "UCII revocation response must be an object"
             )
 
-        response_authority_id = response.get(
-            "authority_id"
-        )
-
-        if response_authority_id != authority_id:
+        if response.get("authority_id") != authority_id:
             raise GuardianAuthorityLifecycleError(
                 "UCII revocation response authority mismatch"
             )
 
-        response_identity_id = response.get(
-            "identity_id"
-        )
-
-        if response_identity_id != config.identity_id:
+        if response.get("identity_id") != config.identity_id:
             raise GuardianAuthorityLifecycleError(
                 "UCII revocation response identity mismatch"
             )
 
-        authority_state = response.get(
-            "authority_state"
-        )
-
-        if authority_state != "REVOKED":
+        if response.get("authority_state") != "REVOKED":
             raise GuardianAuthorityLifecycleError(
                 "UCII did not confirm REVOKED authority state"
             )
 
-        raw_operations = response.get(
-            "allowed_operations"
-        )
+        raw_operations = response.get("allowed_operations")
 
         if (
             not isinstance(raw_operations, list)
@@ -177,7 +187,7 @@ def revoke_active_authority(
             )
         ):
             raise GuardianAuthorityLifecycleError(
-                "UCII revocation response operations are invalid"
+                "UCII revocation operations are invalid"
             )
 
         allowed_operations = tuple(
@@ -187,7 +197,7 @@ def revoke_active_authority(
 
         if operation not in allowed_operations:
             raise GuardianAuthorityLifecycleError(
-                "Revoked authority does not cover the trusted operation"
+                "Returned authority does not cover trusted operation"
             )
 
         granted_by = _non_empty(
@@ -207,7 +217,7 @@ def revoke_active_authority(
 
         if revocation_reason != normalized_reason:
             raise GuardianAuthorityLifecycleError(
-                "UCII revocation response reason mismatch"
+                "UCII revocation reason mismatch"
             )
 
         return AuthorityRevocationResult(

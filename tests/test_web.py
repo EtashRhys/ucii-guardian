@@ -371,3 +371,240 @@ def test_guardian_page_has_single_human_request_label() -> None:
     assert page.count(
         '<label for="request">Human request</label>'
     ) == 1
+
+
+def test_active_authority_enables_revoke_control(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+    from ucii_guardian.authority import AuthorityDecision
+
+    active_authority = SimpleNamespace(
+        decision=AuthorityDecision.ALLOW,
+        authority_state="ACTIVE",
+        authority_id="trusted-authority-c",
+    )
+
+    outcome = SimpleNamespace(
+        authority=active_authority,
+        execution=SimpleNamespace(executed=True),
+        escalation=None,
+        human_decision=None,
+        provenance=(),
+    )
+
+    config = SimpleNamespace(
+        identity_id="guardian-id",
+    )
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            config,
+            object(),
+            tmp_path,
+        ),
+    )
+
+    monkeypatch.setattr(
+        web,
+        "run_guardian_request",
+        lambda **kwargs: outcome,
+    )
+
+    web._set_active_authority_context(None)
+
+    client = TestClient(web.app)
+
+    response = client.post(
+        "/evaluate",
+        data={
+            "request": (
+                "Purchase one printer cartridge under $80."
+            )
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert (
+        'class="revoke" type="submit" >'
+        "Revoke Authority</button>"
+        in response.text
+    )
+
+
+def test_revoke_route_uses_server_held_exact_authority(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+    from ucii_guardian.authority import AuthorityDecision
+
+    trusted_authority = SimpleNamespace(
+        decision=AuthorityDecision.ALLOW,
+        authority_state="ACTIVE",
+        authority_id="trusted-authority-c",
+    )
+
+    outcome = SimpleNamespace(
+        authority=trusted_authority,
+        execution=SimpleNamespace(executed=True),
+        escalation=None,
+        human_decision=None,
+        provenance=(),
+    )
+
+    config = SimpleNamespace(
+        identity_id="guardian-id",
+    )
+
+    web._set_active_authority_context(
+        web.ActiveAuthorityContext(
+            outcome=outcome,
+            request_value=(
+                "Purchase one printer cartridge under $80."
+            ),
+            config=config,
+        )
+    )
+
+    calls = []
+
+    def fake_revoke_active_authority(**kwargs):
+        calls.append(kwargs)
+
+        return web.AuthorityRevocationResult(
+            authority_id="trusted-authority-c",
+            identity_id="guardian-id",
+            authority_state="REVOKED",
+            allowed_operations=(
+                "guardian.purchase.office_supply",
+            ),
+            granted_by="guardian-human-owner",
+            revoked_at="2026-09-11T20:00:00+00:00",
+            revocation_reason=(
+                "human_revoked_guardian_web_authority"
+            ),
+        )
+
+    monkeypatch.setattr(
+        web,
+        "revoke_active_authority",
+        fake_revoke_active_authority,
+    )
+
+    client = TestClient(web.app)
+
+    response = client.post(
+        "/revoke",
+        data={
+            # Browser input must not select the authority.
+            "authority_id": "attacker-supplied-authority",
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+    assert calls[0]["authority"] is trusted_authority
+    assert calls[0]["config"] is config
+
+    assert calls[0]["reason"] == (
+        "human_revoked_guardian_web_authority"
+    )
+
+    assert "attacker-supplied-authority" not in repr(
+        calls[0]
+    )
+
+    assert "REVOKED" in response.text
+    assert "AUTHORITY_REVOKED" in response.text
+    assert "Authority revoked." in response.text
+
+    assert (
+        'class="revoke" type="submit" disabled>'
+        "Revoke Authority</button>"
+        in response.text
+    )
+
+    replay = client.post(
+        "/revoke",
+        data={},
+    )
+
+    assert replay.status_code == 409
+
+
+def test_revoke_failure_keeps_active_authority_fail_closed(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+    from ucii_guardian.authority import AuthorityDecision
+
+    trusted_authority = SimpleNamespace(
+        decision=AuthorityDecision.ALLOW,
+        authority_state="ACTIVE",
+        authority_id="trusted-authority-c",
+    )
+
+    outcome = SimpleNamespace(
+        authority=trusted_authority,
+        execution=SimpleNamespace(executed=True),
+        escalation=None,
+        human_decision=None,
+        provenance=(),
+    )
+
+    web._set_active_authority_context(
+        web.ActiveAuthorityContext(
+            outcome=outcome,
+            request_value=(
+                "Purchase one printer cartridge under $80."
+            ),
+            config=SimpleNamespace(
+                identity_id="guardian-id",
+            ),
+        )
+    )
+
+    def fail_closed(**kwargs):
+        raise web.GuardianAuthorityLifecycleError(
+            "synthetic protected lifecycle unavailable"
+        )
+
+    monkeypatch.setattr(
+        web,
+        "revoke_active_authority",
+        fail_closed,
+    )
+
+    client = TestClient(web.app)
+
+    response = client.post(
+        "/revoke",
+        data={},
+    )
+
+    assert response.status_code == 409
+    assert "ACTIVE" in response.text
+
+    assert (
+        "Revocation failed closed. "
+        "The delegated authority remains ACTIVE."
+        in response.text
+    )
+
+    assert (
+        'class="revoke" type="submit" >'
+        "Revoke Authority</button>"
+        in response.text
+    )

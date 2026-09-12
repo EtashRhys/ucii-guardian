@@ -112,6 +112,14 @@ def authority_fact(
     return AuthorityDecisionResult(
         decision=decision,
         authority_state=state,
+        authority_id=(
+            "test-active-authority"
+            if (
+                decision is AuthorityDecision.ALLOW
+                and state == "ACTIVE"
+            )
+            else None
+        ),
         identity_id=IDENTITY_ID,
         credential_fingerprint=FINGERPRINT,
         operation=action.operation,
