@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">UCII Guardian — Human-Governed Authority for Autonomous Agents</title>
+  <desc id="desc">Judge-facing architecture showing human controls, Strands agent capability, UCII identity and standing authority, Guardian human policy enforcement, protected execution, exception handling, revocation, and provenance.</desc>
+  <defs>
+    <style>
+      .bg{fill:#08101f}.panel{fill:#101a2f;stroke:#33415f;stroke-width:2}.human{fill:#16233d;stroke:#7aa2ff;stroke-width:3}.ucii{fill:#122b2a;stroke:#55d6be;stroke-width:3}.policy{fill:#2a2138;stroke:#c48cff;stroke-width:3}.exec{fill:#2b2518;stroke:#f0c36b;stroke-width:3}.prov{fill:#171f31;stroke:#8d9ab8;stroke-width:2}.deny{fill:#2e1a23;stroke:#ff7a9a;stroke-width:3}.allow{fill:#162b23;stroke:#65d88d;stroke-width:3}.title{fill:#f5f7fb;font:700 42px Arial,sans-serif}.subtitle{fill:#aeb9cf;font:400 20px Arial,sans-serif}.h{fill:#f5f7fb;font:700 24px Arial,sans-serif}.t{fill:#d9e0ee;font:400 18px Arial,sans-serif}.small{fill:#aeb9cf;font:400 15px Arial,sans-serif}.mono{fill:#eef2f9;font:700 20px 'Courier New',monospace}.arrow{stroke:#dce5f6;stroke-width:3;fill:none;marker-end:url(#m)}.mutedArrow{stroke:#7d8aa6;stroke-width:2.5;fill:none;marker-end:url(#m2);stroke-dasharray:8 7}.label{fill:#08101f;stroke:#45536e;stroke-width:1.5}.labelText{fill:#dfe7f5;font:700 15px Arial,sans-serif}.badge{fill:#0f1830;stroke:#5a6c94;stroke-width:1.5}.badgeText{fill:#cbd5e8;font:700 14px Arial,sans-serif}
+    </style>
+    <marker id="m" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#dce5f6"/></marker>
+    <marker id="m2" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#7d8aa6"/></marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="900"/>
+  <text class="title" x="80" y="75">UCII Guardian</text>
+  <text class="subtitle" x="80" y="110">Human-governed authority for autonomous agents</text>
+  <rect class="badge" x="1190" y="42" rx="16" ry="16" width="330" height="50"/>
+  <text class="badgeText" x="1355" y="73" text-anchor="middle">CAPABILITY IS NOT AUTHORITY</text>
+
+  <!-- Human controls -->
+  <rect class="human" x="80" y="175" rx="18" ry="18" width="320" height="250"/>
+  <text class="h" x="240" y="215" text-anchor="middle">Human</text>
+  <text class="t" x="115" y="260">• Grant Standing Authority</text>
+  <text class="t" x="115" y="300">• Set Budget Range</text>
+  <text class="t" x="115" y="340">• Approve Once / Deny</text>
+  <text class="t" x="115" y="380">• Revoke Authority</text>
+  <text class="small" x="115" y="408">Humans define the operating boundaries.</text>
+
+  <!-- Strands capability -->
+  <rect class="panel" x="505" y="175" rx="18" ry="18" width="340" height="250"/>
+  <text class="h" x="675" y="215" text-anchor="middle">Guardian / Strands Agent</text>
+  <text class="t" x="540" y="260">Understands the request</text>
+  <text class="t" x="540" y="300">Normalizes action + amount</text>
+  <text class="t" x="540" y="340">Proposes consequential work</text>
+  <text class="small" x="540" y="380">The model proposes.</text>
+  <text class="small" x="540" y="405">It does not grant itself authority.</text>
+
+  <!-- UCII -->
+  <rect class="ucii" x="950" y="175" rx="18" ry="18" width="570" height="250"/>
+  <text class="h" x="1235" y="215" text-anchor="middle">UCII Identity + Delegated Authority</text>
+  <text class="t" x="990" y="258">1. Verify Guardian cryptographic identity</text>
+  <text class="t" x="990" y="298">2. Evaluate fresh standing authority state</text>
+  <text class="t" x="990" y="338">3. Return ACTIVE / REVOKED / NOT GRANTED</text>
+  <text class="small" x="990" y="383">Identity and authority remain separate.</text>
+  <text class="small" x="990" y="407">Revocation removes delegation, not identity.</text>
+
+  <!-- main arrows -->
+  <path class="arrow" d="M400 285 L505 285"/>
+  <rect class="label" x="421" y="248" rx="10" ry="10" width="63" height="28"/><text class="labelText" x="452" y="268" text-anchor="middle">request</text>
+  <path class="arrow" d="M845 285 L950 285"/>
+  <rect class="label" x="862" y="248" rx="10" ry="10" width="76" height="28"/><text class="labelText" x="900" y="268" text-anchor="middle">verify</text>
+
+  <!-- Guardian policy gate -->
+  <rect class="policy" x="505" y="515" rx="18" ry="18" width="525" height="205"/>
+  <text class="h" x="767" y="555" text-anchor="middle">Guardian Human Policy Gate</text>
+  <text class="t" x="545" y="598">Fresh UCII authority check + server-held Budget Range</text>
+  <text class="t" x="545" y="638">Within boundary → autonomous execution</text>
+  <text class="t" x="545" y="678">Outside boundary → stop before execution</text>
+
+  <!-- execution -->
+  <rect class="allow" x="1120" y="500" rx="18" ry="18" width="400" height="150"/>
+  <text class="h" x="1320" y="540" text-anchor="middle">Protected Execution</text>
+  <text class="t" x="1160" y="585">Only after identity + authority + policy pass</text>
+  <text class="small" x="1160" y="620">Routine work completes autonomously.</text>
+
+  <!-- exception -->
+  <rect class="deny" x="1120" y="700" rx="18" ry="18" width="400" height="125"/>
+  <text class="h" x="1320" y="740" text-anchor="middle">Human Exception Decision</text>
+  <text class="t" x="1160" y="782">Approve Once → exact exception only</text>
+  <text class="t" x="1160" y="812">Deny → no execution</text>
+
+  <!-- arrows UCII -> gate -->
+  <path class="arrow" d="M1235 425 L1235 465 L905 465 L905 515"/>
+  <rect class="label" x="1005" y="444" rx="10" ry="10" width="196" height="30"/><text class="labelText" x="1103" y="465" text-anchor="middle">fresh authority result</text>
+
+  <!-- human -> gate -->
+  <path class="arrow" d="M240 425 L240 615 L505 615"/>
+  <rect class="label" x="290" y="579" rx="10" ry="10" width="151" height="30"/><text class="labelText" x="365" y="600" text-anchor="middle">Budget Range</text>
+
+  <!-- gate -> execution/exception -->
+  <path class="arrow" d="M1030 585 L1120 575"/>
+  <rect class="label" x="1037" y="540" rx="10" ry="10" width="66" height="28"/><text class="labelText" x="1070" y="560" text-anchor="middle">ALLOW</text>
+  <path class="arrow" d="M1030 665 L1080 665 L1080 762 L1120 762"/>
+  <rect class="label" x="1022" y="705" rx="10" ry="10" width="86" height="28"/><text class="labelText" x="1065" y="725" text-anchor="middle">EXCEPTION</text>
+
+  <!-- exception back to execute -->
+  <path class="mutedArrow" d="M1320 700 L1320 650"/>
+  <text class="small" x="1340" y="680">Approve Once</text>
+
+  <!-- revoke path -->
+  <path class="mutedArrow" d="M400 365 L465 365 L465 470 L1410 470 L1410 425"/>
+  <rect class="label" x="760" y="437" rx="10" ry="10" width="223" height="30"/><text class="labelText" x="871" y="458" text-anchor="middle">Revoke exact delegation</text>
+
+  <!-- provenance -->
+  <rect class="prov" x="80" y="760" rx="16" ry="16" width="950" height="65"/>
+  <text class="h" x="115" y="800">Provenance</text>
+  <text class="t" x="275" y="800">request → identity → authority → human policy → approval/refusal → execution</text>
+
+  <!-- footer principle -->
+  <text class="mono" x="800" y="875" text-anchor="middle">Capability ≠ Identity ≠ Authority ≠ Human Policy ≠ Approval ≠ Execution</text>
+</svg>
