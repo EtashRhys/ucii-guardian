@@ -19,6 +19,10 @@ from starlette.routing import Route
 
 from ucii_guardian.agent import build_guardian_agent
 from ucii_guardian.authority import AuthorityDecision
+from ucii_guardian.budget import (
+    GuardianBudgetError,
+    GuardianBudgetPolicy,
+)
 from ucii_guardian.authority_lifecycle import (
     AuthorityGrantResult,
     AuthorityRevocationResult,
@@ -61,6 +65,7 @@ GUARDIAN_STANDING_GRANTED_BY = "guardian-human-owner"
 
 _pending_context: PendingEscalationContext | None = None
 _active_authority_context: ActiveAuthorityContext | None = None
+_budget_policy = GuardianBudgetPolicy.from_value("0.00")
 
 
 def _set_pending_context(
@@ -86,6 +91,15 @@ def _set_active_authority_context(
 
 def _get_active_authority_context() -> ActiveAuthorityContext | None:
     return _active_authority_context
+
+
+def _set_budget_policy(policy: GuardianBudgetPolicy) -> None:
+    global _budget_policy
+    _budget_policy = policy
+
+
+def _get_budget_policy() -> GuardianBudgetPolicy:
+    return _budget_policy
 
 
 def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
@@ -198,6 +212,7 @@ def render_guardian_page(
     grant: AuthorityGrantResult | None = None,
     revocation: AuthorityRevocationResult | None = None,
     lifecycle_message: str | None = None,
+    budget_message: str | None = None,
 ) -> str:
     state = _render_outcome(outcome)
 
@@ -234,6 +249,11 @@ def render_guardian_page(
 
     if lifecycle_message is not None:
         state["reason"] = lifecycle_message
+
+    if budget_message is not None:
+        state["reason"] = budget_message
+
+    budget_value = f"{_get_budget_policy().max_transaction_usd:.2f}"
 
     page = """<!doctype html>
 <html lang="en">
@@ -341,6 +361,28 @@ button {
     gap: 10px;
     margin-top: 14px;
 }
+.budget-control {
+    margin: 22px 0 10px;
+    padding: 16px;
+    background: #0d1427;
+    border: 1px solid #26314f;
+    border-radius: 12px;
+}
+.budget-value {
+    font-size: 26px;
+    font-weight: 800;
+    margin: 2px 0 12px;
+}
+.budget-range {
+    width: 100%;
+}
+.budget-scale {
+    display: flex;
+    justify-content: space-between;
+    color: #7f8ba7;
+    font-size: 12px;
+    margin-top: 4px;
+}
 .status {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -433,6 +475,31 @@ placeholder="Example: Purchase one printer cartridge under $80.">{request_value}
 <div class="label">Human control</div>
 <p class="muted">{reason}</p>
 
+<form method="post" action="/budget">
+<div class="budget-control">
+<label for="budget">Budget Range</label>
+<div class="budget-value">$<span id="budget-value">{budget_value}</span></div>
+<input
+    class="budget-range"
+    id="budget"
+    name="budget"
+    type="range"
+    min="0"
+    max="5000"
+    step="0.01"
+    value="{budget_value}"
+    oninput="document.getElementById('budget-value').textContent = Number(this.value).toFixed(2)"
+>
+<div class="budget-scale">
+<span>$0.00</span>
+<span>$5,000.00</span>
+</div>
+<div class="actions">
+<button class="primary" type="submit">Set Budget</button>
+</div>
+</div>
+</form>
+
 <form method="post" action="/grant">
 <div class="actions">
 <button class="grant" type="submit" {grant_disabled}>Grant Standing Authority</button>
@@ -480,6 +547,7 @@ permission to execute a consequential action.
         "{deny_disabled}": state["deny_disabled"],
         "{grant_disabled}": state["grant_disabled"],
         "{revoke_disabled}": state["revoke_disabled"],
+        "{budget_value}": budget_value,
     }
 
     for placeholder, value in replacements.items():
@@ -583,6 +651,35 @@ async def evaluate(request: Request) -> HTMLResponse:
         render_guardian_page(
             outcome=outcome,
             request_value=human_request,
+        )
+    )
+
+
+async def set_budget(request: Request) -> HTMLResponse:
+    form = await request.form()
+    raw_budget = str(form.get("budget", "")).strip()
+
+    try:
+        policy = GuardianBudgetPolicy.from_value(raw_budget)
+    except GuardianBudgetError:
+        return HTMLResponse(
+            render_guardian_page(
+                budget_message=(
+                    "Budget update failed closed. Human-controlled Budget "
+                    "Range remains unchanged."
+                ),
+            ),
+            status_code=400,
+        )
+
+    _set_budget_policy(policy)
+
+    return HTMLResponse(
+        render_guardian_page(
+            budget_message=(
+                "Human-controlled Budget Range set to "
+                f"${policy.max_transaction_usd:.2f} per autonomous request."
+            ),
         )
     )
 
@@ -697,6 +794,7 @@ app = Starlette(
     routes=[
         Route("/", homepage, methods=["GET"]),
         Route("/evaluate", evaluate, methods=["POST"]),
+        Route("/budget", set_budget, methods=["POST"]),
         Route("/grant", grant, methods=["POST"]),
         Route("/revoke", revoke, methods=["POST"]),
         Route("/decision", decide, methods=["POST"]),

@@ -837,3 +837,67 @@ def test_active_authority_disables_grant_control(
         "Revoke Authority</button>"
         in response.text
     )
+
+
+
+def test_budget_control_defaults_fail_closed_to_zero() -> None:
+    from ucii_guardian.web import (
+        _set_budget_policy,
+        render_guardian_page,
+    )
+    from ucii_guardian.budget import GuardianBudgetPolicy
+
+    _set_budget_policy(GuardianBudgetPolicy.from_value("0.00"))
+    page = render_guardian_page()
+
+    assert "Budget Range" in page
+    assert 'min="0"' in page
+    assert 'max="5000"' in page
+    assert 'step="0.01"' in page
+    assert 'value="0.00"' in page
+    assert "Set Budget" in page
+
+
+def test_budget_route_sets_server_held_budget() -> None:
+    from starlette.testclient import TestClient
+
+    from ucii_guardian.web import (
+        _get_budget_policy,
+        _set_budget_policy,
+        app,
+    )
+    from ucii_guardian.budget import GuardianBudgetPolicy
+
+    _set_budget_policy(GuardianBudgetPolicy.from_value("0.00"))
+
+    response = TestClient(app).post(
+        "/budget",
+        data={"budget": "500.00"},
+    )
+
+    assert response.status_code == 200
+    assert str(_get_budget_policy().max_transaction_usd) == "500.00"
+    assert 'value="500.00"' in response.text
+    assert "Budget Range set to $500.00 per autonomous request." in response.text
+
+
+def test_budget_route_rejects_out_of_range_value_without_mutation() -> None:
+    from starlette.testclient import TestClient
+
+    from ucii_guardian.web import (
+        _get_budget_policy,
+        _set_budget_policy,
+        app,
+    )
+    from ucii_guardian.budget import GuardianBudgetPolicy
+
+    _set_budget_policy(GuardianBudgetPolicy.from_value("500.00"))
+
+    response = TestClient(app).post(
+        "/budget",
+        data={"budget": "5000.01"},
+    )
+
+    assert response.status_code == 400
+    assert str(_get_budget_policy().max_transaction_usd) == "500.00"
+    assert "failed closed" in response.text
