@@ -141,10 +141,14 @@ def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
         execution = "No execution"
 
     if pending_escalation:
-        reason = (
-            "Current UCII authority does not cover this action. "
-            "Human judgment is required."
-        )
+        escalation_reason = getattr(outcome.escalation, "reason", None)
+        if isinstance(escalation_reason, str) and escalation_reason.strip():
+            reason = escape(escalation_reason)
+        else:
+            reason = (
+                "Current UCII authority does not cover this action. "
+                "Human judgment is required."
+            )
         approve_disabled = ""
         deny_disabled = ""
     elif outcome.human_decision is not None:

@@ -967,3 +967,35 @@ def test_evaluate_route_passes_server_held_budget_policy(
         str(captured["budget_policy"].max_transaction_usd)
         == "500.00"
     )
+
+
+
+def test_budget_escalation_displays_budget_reason() -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+    from ucii_guardian.authority import AuthorityDecision
+
+    outcome = SimpleNamespace(
+        authority=SimpleNamespace(
+            decision=AuthorityDecision.ALLOW,
+            authority_state="ACTIVE",
+            authority_id="authority-e",
+        ),
+        escalation=SimpleNamespace(
+            reason=(
+                "BUDGET_RANGE_EXCEEDED: requested amount exceeds "
+                "the human-controlled autonomous Budget Range."
+            ),
+        ),
+        human_decision=None,
+        execution=None,
+        provenance=(),
+    )
+
+    page = web.render_guardian_page(outcome=outcome)
+
+    assert "BUDGET_RANGE_EXCEEDED" in page
+    assert "human-controlled autonomous Budget Range" in page
+    assert "Current UCII authority does not cover this action" not in page
+    assert "Awaiting human decision" in page
