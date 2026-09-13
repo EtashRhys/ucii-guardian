@@ -999,3 +999,91 @@ def test_budget_escalation_displays_budget_reason() -> None:
     assert "human-controlled autonomous Budget Range" in page
     assert "Current UCII authority does not cover this action" not in page
     assert "Awaiting human decision" in page
+
+
+def test_successful_revoke_clears_stale_pending_execution_ui(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+    from ucii_guardian.authority import AuthorityDecision
+
+    authority = SimpleNamespace(
+        decision=AuthorityDecision.ALLOW,
+        authority_state="ACTIVE",
+        authority_id="authority-e",
+    )
+
+    pending = SimpleNamespace(
+        authority=authority,
+        execution=None,
+        escalation=SimpleNamespace(
+            reason="BUDGET_RANGE_EXCEEDED: synthetic pending exception."
+        ),
+        human_decision=None,
+        provenance=(),
+    )
+
+    config = SimpleNamespace(
+        identity_id="guardian-id",
+    )
+
+    web._set_pending_context(
+        web.PendingEscalationContext(
+            outcome=pending,
+            request_value="Purchase one printer cartridge for $150.",
+            recorder=object(),
+            receipt_directory=SimpleNamespace(),
+        )
+    )
+
+    web._set_active_authority_context(
+        web.ActiveAuthorityContext(
+            outcome=pending,
+            request_value="Purchase one printer cartridge for $150.",
+            config=config,
+        )
+    )
+
+    monkeypatch.setattr(
+        web,
+        "revoke_active_authority",
+        lambda **kwargs: web.AuthorityRevocationResult(
+            authority_id="authority-e",
+            identity_id="guardian-id",
+            authority_state="REVOKED",
+            allowed_operations=(
+                "guardian.purchase.office_supply",
+            ),
+            granted_by="guardian-human-owner",
+            revoked_at="2026-09-13T21:01:12+00:00",
+            revocation_reason=(
+                "human_revoked_guardian_web_authority"
+            ),
+        ),
+    )
+
+    client = TestClient(web.app)
+
+    response = client.post(
+        "/revoke",
+        data={},
+    )
+
+    assert response.status_code == 200
+    assert "REVOKED" in response.text
+    assert "No execution" in response.text
+    assert "Awaiting human decision" not in response.text
+
+    assert (
+        'class="approve" type="submit" name="decision" '
+        'value="APPROVE_ONCE" disabled'
+        in response.text
+    )
+
+    assert (
+        'class="deny" type="submit" name="decision" '
+        'value="DENY" disabled'
+        in response.text
+    )

@@ -237,6 +237,9 @@ def render_guardian_page(
 
     if revocation is not None:
         state["authority"] = "REVOKED"
+        state["execution"] = "No execution"
+        state["approve_disabled"] = "disabled"
+        state["deny_disabled"] = "disabled"
         state["grant_disabled"] = ""
         state["revoke_disabled"] = "disabled"
         state["reason"] = (
