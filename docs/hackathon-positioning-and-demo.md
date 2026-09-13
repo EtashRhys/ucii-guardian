@@ -1,43 +1,140 @@
-# UCII Guardian — Hackathon Positioning and Demo Narrative
+# UCII Guardian — Hackathon Positioning and Final Demo Narrative
 
 ## Purpose
 
-This file freezes the product story, claim discipline, and final-demo emphasis for the hackathon so the implementation can stay narrow while the presentation remains precise.
+This file is the single source of truth for Guardian's hackathon story, judge-facing language, final demo sequence, claim discipline, and presentation scope.
 
-Guardian should be judged on what the working system can actually demonstrate, not on an overbroad claim that nobody else has explored cryptographic identity, delegated authority, or revocation for AI agents.
+The presentation must make the importance of Guardian obvious before explaining its technical depth. The judge should not have to infer why cryptographic identity, delegated authority, one-time approval, budget limits, revocation, protected execution, and provenance matter.
 
-## Core positioning
+The presentation is a cause-and-effect demonstration, not an architecture lecture.
 
-> **UCII + Guardian show how an autonomous AI can operate without ever possessing unlimited authority.**
-
-The model interprets human intent and proposes actions. Independent cryptographic infrastructure (UCII) verifies the agent's identity and its current delegated authority before any consequential execution is allowed.
-
-- Routine authorized work proceeds autonomously.
-- Exceptional requests return to a human for one-time judgment (`APPROVE_ONCE`).
-- A human can revoke standing authority without destroying the agent's identity.
-- Identity, authority, human judgment, execution, economic permission, and provenance remain separate facts.
-
-The strongest concise line remains:
+## The central idea
 
 > **Capability is not authority.**
 
-A running model may know how to perform an action, possess network access, hold a valid identity credential, or be technically capable of invoking a tool. None of those facts independently establish permission for the consequential action.
+AI agents are becoming capable of doing real work. The dangerous assumption is that because an agent *can* do something, it should be allowed to do it.
 
-## Claim discipline
+UCII Guardian separates intelligence and capability from permission.
 
-Do **not** claim that Guardian or UCII is the first system to place cryptographic identity, authorization, delegated capability, or revocation outside an LLM. Adjacent research and engineering efforts exist in this area.
+The model may interpret a request, reason about it, propose an action, and know how to perform it. None of those facts create authority.
 
-Examples currently worth tracking include AstraCipher, AITH (AI Trust Handshake), kxco-pq-agent, MAGIQ, and related work on agent identity, cryptographic delegation, post-quantum authentication, policy enforcement, and revocation.
+Independent UCII infrastructure establishes who Guardian is and whether it currently has delegated authority for the consequential action. Guardian's protected execution boundary then requires that authority before execution.
 
-Before naming or comparing any external project in public submission material, verify the current public source and exact technical claim. The hackathon submission does not require a priority argument.
+> **Guardian is not designed to prevent autonomous AI. It is designed to make autonomous AI governable.**
 
-The safer and stronger claim is:
+## The product promise
 
-> **Guardian is a working autonomous application that demonstrates a complete, human-controlled authority lifecycle against real UCII infrastructure.**
+UCII + Guardian demonstrate how an autonomous AI can operate without possessing unlimited authority.
 
-## What Guardian should visibly prove
+- Routine authorized work proceeds autonomously.
+- Routine work inside the standing economic budget does **not** interrupt the human for approval.
+- Exceptional requests stop before execution and return to the human for one-time judgment.
+- A human can grant fresh standing authority.
+- A human can approve one exact exceptional action without broadening standing authority.
+- A human can deny an exceptional action.
+- A human can permanently revoke a standing delegation without destroying the agent's identity.
+- Identity, standing authority, one-time human judgment, economic limits, payment/settlement, execution, and provenance remain separate facts.
 
-Guardian's demo should make three orthogonal facts obvious:
+The concise architecture is:
+
+```text
+capability != identity != authority != approval != payment/settlement != execution
+```
+
+## The judge must understand this within the first 30 seconds
+
+Recommended opening:
+
+> **AI agents are becoming capable of taking real actions. But capability is not authority. UCII Guardian lets an AI remain autonomous inside authority that a human deliberately granted, while preventing the AI from crossing that boundary on its own.**
+
+Then demonstrate the concept rather than explaining the implementation.
+
+First visual lesson:
+
+```text
+$35 routine purchase
+-> Guardian identity verifies
+-> standing authority ACTIVE
+-> within budget
+-> automatic execution
+-> no human interruption
+```
+
+Then cross the boundary:
+
+```text
+$125 purchase
+-> Guardian identity verifies
+-> standing authority ACTIVE
+-> budget exceeded
+-> NO EXECUTION
+-> human gets Approve Once / Deny
+```
+
+This establishes that Guardian preserves useful autonomy while enforcing a real boundary.
+
+## The human authority lifecycle
+
+The finished Guardian exposes four human authority decisions.
+
+### Grant Standing Authority
+
+> **You may autonomously do this class of work within these limits.**
+
+A grant establishes a fresh bounded ongoing delegation. A new standing grant receives a new authority ID. A historical revoked grant is never silently restored.
+
+### Approve Once
+
+> **I am not changing your ongoing authority, but I approve this exact exception once.**
+
+`APPROVE_ONCE` is bound to the exact pending request. It is consumed once and cannot be replayed. It does not create, broaden, reactivate, or increase standing authority or standing budget.
+
+### Deny
+
+> **No. This action does not happen.**
+
+Deny creates no approval and causes no protected execution.
+
+### Revoke Authority
+
+> **Your ongoing permission ends now.**
+
+Revocation permanently terminates the exact standing delegation. Guardian's identity remains intact. Equivalent standing permission later requires a fresh authority record with a different authority ID.
+
+## The critical autonomy message
+
+Guardian must never be presented as a system that asks a human before every consequential action.
+
+The intended normal path is:
+
+```text
+REQUEST
+-> STRANDS NORMALIZES
+-> UCII IDENTITY VERIFIED
+-> STANDING AUTHORITY ACTIVE
+-> WITHIN BUDGET
+-> ALLOW
+-> PROTECTED EXECUTION
+-> COMPLETED
+```
+
+**No additional human approval occurs.**
+
+Human intervention occurs when the request falls outside the existing authority/economic envelope or when the human deliberately changes that envelope.
+
+This is **bounded autonomy**, not constant human remote control.
+
+## The intuitive analogy
+
+For a non-specialist judge, use the employee/corporate-card analogy if needed:
+
+> **You would not give a trusted employee unlimited access to the company bank account. You give them an identity, a role, spending authority, limits, an exception process, an audit trail, and the ability to revoke access. Guardian brings that authority model to autonomous AI.**
+
+Then immediately return to the working demo.
+
+## What Guardian visibly proves
+
+The interface should make these facts distinct:
 
 ```text
 IDENTITY
@@ -46,146 +143,146 @@ IDENTITY
 AUTHORITY
   ACTIVE | NOT_GRANTED | REVOKED
 
+BUDGET
+  WITHIN LIMIT | EXCEEDED
+
 EXECUTION
   Completed | Awaiting human decision | No execution
 ```
 
 The key security property is that these facts do not collapse into one another.
 
-A particularly strong post-revocation state is:
+The strongest post-revocation state is:
 
 ```text
-IDENTITY_VERIFIED
-+ AUTHORITY_REVOKED
-+ EXECUTION_REFUSED
+IDENTITY:   UCII_VERIFIED
+AUTHORITY:  REVOKED
+EXECUTION:  DENIED / NO EXECUTION
 ```
 
-This demonstrates that Guardian can continue proving **who it is** while simultaneously proving that it no longer has permission to perform the consequential action.
+The agent is still running. Its identity still verifies. It may still know how to perform the action. What changed is its authority.
 
-The exceptional path should also remain explicit:
+## Why the budget demonstration matters
+
+The demo budget turns abstract authorization into something every judge can understand.
+
+Target demo policy:
 
 ```text
-IDENTITY_VERIFIED
--> NOT_GRANTED
--> ESCALATION_REQUIRED
--> HUMAN APPROVE_ONCE
--> EXECUTE
+standing transaction limit: $80
+standing monthly limit:     $300
 ```
 
-After that one exceptional action, standing delegated authority must remain unchanged. `APPROVE_ONCE` is human judgment for one exact action, not a hidden authority grant.
-
-## UCII/Guardian architectural distinction
-
-**UCII** is the identity and authority infrastructure.
-
-**Guardian** is an autonomous application that demonstrates what becomes possible when an agent is integrated with that infrastructure correctly.
-
-Guardian should therefore not be presented as merely another identity protocol. The demo is about the composition of:
-
-1. real Strands-based agent reasoning;
-2. independent UCII identity verification;
-3. independent delegated-action authority;
-4. protected consequential execution;
-5. bounded human escalation and `APPROVE_ONCE`;
-6. permanent authority revocation;
-7. human-readable provenance.
-
-The LLM remains above the authority boundary. It can interpret, propose, and reason. It cannot grant itself permission.
-
-## UCII differentiation to preserve in the story
-
-### Universal actor model
-
-UCII is designed for more than AI agents. Its identity model includes:
-
-- humans;
-- AI agents;
-- robots;
-- devices;
-- services;
-- organizations.
-
-Guardian is one application of that broader infrastructure.
-
-### Identity is not authority
-
-A valid UCII identity credential proves identity/authentication facts. It does not create action authority.
-
-Guardian's demonstrated state `UCII_VERIFIED + REVOKED + DENY` should be highlighted because it makes this separation visible.
-
-### One-off approval is not standing authority
-
-`APPROVE_ONCE` must remain bound to the exact exceptional request and must not create, broaden, or reactivate a UCII delegated-authority record.
-
-### Revocation is historical, not reversible state cleanup
-
-Revoking an authority record should preserve it as historical evidence. Continued delegated authority requires a fresh legitimate authority grant rather than an `Unrevoke` or `Reactivate` operation.
-
-### Economic permission is separate
-
-UCII's economic/x402 dimension should remain conceptually separate from identity, delegated action authority, human approval, and execution.
-
-The demo does not need to expand into a payment workflow merely to explain this. The important architectural point is:
+Examples:
 
 ```text
-identity != authority != approval != payment/settlement != execution
+$35 purchase -> autonomous
+$72 purchase -> autonomous
+$125 purchase -> human exception required
+$55 purchase with only $40 monthly capacity remaining -> human exception required
 ```
 
-### Provenance explains cause and effect
+A successful `APPROVE_ONCE` exception does not silently increase either standing limit.
 
-The provenance record should make it possible to reconstruct the actual lifecycle rather than merely display a final status badge.
+The budget is an enforcement layer under the authority model, not a replacement for authority.
 
-## Final demo story
+## FINAL DEMO — LOCKED CAUSE-AND-EFFECT SEQUENCE
 
-The strongest final video is a cause-and-effect demonstration, not an architecture lecture.
+The final recording should tell one continuous story. Do not tour the codebase before the audience understands the result.
 
-### Scene 1 — Autonomous routine work
+### Scene 0 — Problem and promise
 
-Human request is within active delegated authority.
+> **AI agents are becoming capable of doing real work on our behalf. But capability is not authority. UCII Guardian lets an autonomous AI act freely inside authority a human deliberately granted, while enforcing the boundary outside the model.**
+
+Keep this short and move directly into the working product.
+
+### Scene 1 — Grant bounded standing authority
+
+Begin without usable standing authority for the demo action, or clearly establish current state.
+
+Human selects **Grant Standing Authority** for the bounded office-supply action.
+
+```text
+HUMAN GRANT
+-> UCII standing authority created
+-> fresh authority ID
+-> ACTIVE
+```
+
+The important fact is that the human, not the LLM, establishes the delegation.
+
+### Scene 2 — Autonomous routine work
+
+Submit a normal office-supply request inside standing authority and budget, for example `$35`.
 
 ```text
 REQUEST
 -> UCII_VERIFIED
 -> ACTIVE
+-> WITHIN BUDGET
 -> ALLOW
 -> EXECUTE
 -> Completed
 ```
 
-Emphasize that no human interruption was needed.
+Recommended language:
 
-### Scene 2 — Boundary exceeded
+> **Guardian does not ask me for permission again. I already delegated this class of work within these limits, so it can operate autonomously.**
 
-Human asks for a legitimate action that does not have standing delegated authority.
+This proves Guardian is not merely an approval application.
+
+### Scene 3 — Boundary exceeded
+
+Submit a legitimate request above the standing transaction budget, for example `$125`.
 
 ```text
 REQUEST
 -> UCII_VERIFIED
--> NOT_GRANTED
+-> ACTIVE
+-> BUDGET EXCEEDED
 -> ESCALATION_REQUIRED
 -> NO EXECUTION
 ```
 
-### Scene 3 — One-time human judgment
+Recommended language:
 
-Human chooses `Approve Once` for that exact pending request.
+> **The AI is capable of requesting the purchase, but capability does not create authority. It reached the boundary I established, so execution stopped.**
+
+The existing **Approve Once** and **Deny** controls now handle human judgment.
+
+### Scene 4 — One-time human exception
+
+Human selects **Approve Once** for the exact `$125` request.
 
 ```text
 APPROVE_ONCE
--> exact request only
--> EXECUTE
+-> exact pending request only
+-> protected execution
 -> Completed
 ```
 
-Then make clear that standing authority remains `NOT_GRANTED`.
+If presentation time permits, visibly prove replay cannot authorize a second execution.
 
-### Scene 4 — Human revokes standing authority
+Recommended language:
 
-After Objective 8F, the human should perform this directly through Guardian's **Revoke Authority** control.
+> **I approved this exact exception once. I did not increase Guardian's standing budget or give it broader authority.**
 
-The control must invoke the legitimate UCII revocation lifecycle through the public authorized boundary. It must not be a UI-only state change, a direct database mutation from Guardian, or an LLM-accessible self-revocation/self-restoration mechanism.
+### Scene 5 — Deny another exception
 
-The visible transition should be:
+Submit another request outside the standing budget and select **Deny**.
+
+```text
+EXCEPTION REQUEST
+-> ESCALATION_REQUIRED
+-> HUMAN DENY
+-> NO EXECUTION
+```
+
+Keep this fast. It completes the human decision model.
+
+### Scene 6 — Revoke standing authority
+
+Human selects **Revoke Authority** for the current ACTIVE standing delegation.
 
 ```text
 ACTIVE
@@ -194,13 +291,11 @@ ACTIVE
 -> UI shows REVOKED
 ```
 
-There is no Undo, Reactivate, or Unrevoke path.
+There is no Undo, Reactivate, or Unrevoke path for that authority record.
 
-### Scene 5 — Same class of request after revocation
+### Scene 7 — The decisive post-revocation proof
 
-Submit the same class of routine request again.
-
-Guardian must perform a fresh identity verification / authority check and visibly produce:
+Submit the same class of harmless routine request that previously executed automatically, for example the `$35` purchase.
 
 ```text
 UCII_VERIFIED
@@ -209,108 +304,188 @@ UCII_VERIFIED
 -> No execution
 ```
 
-The model, identity, and request class can remain the same. The changed fact is **authority**.
-
 Recommended spoken explanation:
 
-> **The agent is still running. Its identity still verifies. It still knows how to request the action. What changed is its authority. The human revoked it, so the consequential action cannot proceed.**
+> **Nothing happened to the AI. It's still running. Its identity still cryptographically verifies. It still knows how to request this action. What changed is its authority. I revoked it, so it cannot cross the protected execution boundary.**
 
-## The three-column visual argument
+Pause long enough for the state to be understood. This is the strongest moment in the demonstration.
 
-The current interface already exposes one of Guardian's strongest ideas:
+## The realization we want the judge to have
+
+After the post-revocation proof:
+
+> **This demo uses an office-supply purchase because the boundary is easy to see. But the authority model is not about office supplies. Replace this action with deploying code, moving funds, accessing enterprise infrastructure, operating a robot, or controlling another consequential system. The principle is the same: the AI's capability does not determine its authority.**
+
+Do not claim Guardian solves AI alignment or every AI safety problem.
+
+The defensible claim is:
+
+> **Guardian limits what an autonomous AI is authorized to do independently of what the AI decides it wants to do.**
+
+Guardian does not need the model's opinion about whether the model has authority.
+
+## The technical reveal — only after the concept is understood
+
+Briefly reveal why the result is structurally meaningful:
+
+- The LLM is not the authority source.
+- The LLM cannot grant itself standing authority.
+- The LLM cannot approve its own exception.
+- The LLM cannot restore a revoked authority.
+- Browser state does not create authority.
+- Cryptographic identity verification does not imply action authority.
+- Economic entitlement/payment access does not imply action authority.
+- `APPROVE_ONCE` does not broaden standing authority.
+- A revoked grant remains historical evidence; later standing authority requires a fresh grant.
+- Consequential execution structurally requires established authorization evidence.
+- Fresh authority evaluation prevents stale permission from surviving revocation.
+- Provenance makes the lifecycle reconstructable.
+
+Do not turn this into a long subsystem tour. The architecture supports the demo; the demo is the story.
+
+## UCII / Guardian architectural distinction
+
+**UCII** is the identity and authority infrastructure.
+
+**Guardian** is an autonomous application demonstrating what becomes possible when an agent is integrated with that infrastructure correctly.
+
+Guardian should not be presented as merely another identity protocol or merely a purchasing assistant.
+
+The working composition is:
+
+1. real Strands-based agent reasoning;
+2. independent UCII cryptographic identity verification;
+3. independent delegated-action authority;
+4. bounded economic policy;
+5. protected consequential execution;
+6. bounded human escalation and `APPROVE_ONCE`;
+7. explicit human `DENY`;
+8. fresh standing-authority grant;
+9. permanent authority revocation;
+10. human-readable provenance.
+
+The LLM remains above the authority boundary. It can interpret, propose, and reason. It cannot make its own permission true.
+
+## UCII differentiation to preserve
+
+### Universal actor model
+
+UCII is designed for humans, AI agents, robots, devices, services, and organizations. Guardian is one application of that broader infrastructure.
+
+### Identity is not authority
+
+A valid UCII identity credential proves identity/authentication facts. It does not create action authority. `UCII_VERIFIED + REVOKED + DENY` makes this separation visible.
+
+### One-off approval is not standing authority
+
+`APPROVE_ONCE` remains bound to the exact exceptional request and must not create, broaden, or reactivate standing authority.
+
+### Revocation preserves historical truth
+
+Revoking an authority record preserves it as historical evidence. Continued delegated authority requires a fresh legitimate grant rather than an Unrevoke/Reactivate operation.
+
+### Economic permission is separate
+
+UCII's economic/x402 dimension remains conceptually separate from identity, delegated action authority, human approval, budget policy, and execution.
+
+### Provenance explains cause and effect
+
+The provenance record should allow the actual lifecycle to be reconstructed rather than merely displaying a final status badge.
+
+## Visual argument
+
+Before revocation and within budget:
 
 ```text
 Guardian Decision | Authority | Execution
+ALLOW             | ACTIVE    | Completed
 ```
 
-Use those columns deliberately in the final recording.
-
-Before revocation:
+At a budget boundary:
 
 ```text
-ALLOW | ACTIVE | Completed
+Guardian Decision   | Authority | Execution
+ESCALATION_REQUIRED | ACTIVE    | Awaiting human decision
 ```
 
 After revocation:
 
 ```text
-DENY | REVOKED | No execution
+Guardian Decision | Authority | Execution
+DENY              | REVOKED   | No execution
 ```
 
-Meanwhile provenance can still show `IDENTITY_VERIFIED`.
+Meanwhile identity remains `UCII_VERIFIED`.
 
-This visual cause-and-effect is more persuasive than a long explanation of the architecture.
+This visual cause-and-effect is more persuasive than a long architecture explanation.
 
-## Optional voice enhancement — only after 8F and Objective 9
+## Judge-facing language hierarchy
 
-Voice input is a **bonus presentation enhancement**, not part of Guardian's authority architecture.
+If there is time for only one sentence:
 
-Only attempt it after:
+> **Capability is not authority.**
 
-1. Objective 8F is implemented and proven;
-2. Objective 9 hardening is complete;
-3. the final text-input demo path is stable.
+If there is time for two:
 
-Preferred scope is deliberately tiny:
+> **Guardian lets autonomous AI operate inside authority a human deliberately delegated. When the AI reaches that boundary, execution stops outside the model.**
 
-```text
-microphone
--> speech-to-text
--> existing Human Request field
--> existing Guardian workflow unchanged
-```
+Compact product explanation:
 
-Voice must gain **zero authority**. It is only another way to populate the exact same human-request text field.
-
-Prefer a browser-native implementation if it is reliable in the final demo browser and requires no new backend service, credential, audio-storage pipeline, or security boundary.
-
-Abort the enhancement immediately if it becomes a subsystem, requires significant new infrastructure, destabilizes the demo, or threatens submission timing.
-
-If it remains tiny and reliable, the ideal visual sequence is:
-
-1. speak the routine request;
-2. Guardian returns `ALLOW -> ACTIVE -> Completed`;
-3. human clicks **Revoke Authority**;
-4. speak the same request again;
-5. Guardian returns `DENY -> REVOKED -> No execution`.
-
-That sequence should be treated as presentation polish, not as a requirement for a successful submission.
-
-## Judge-facing framing
-
-Recommended opening:
-
-> **AI agents are becoming capable of doing real work on our behalf. But capability is not authority. UCII Guardian lets an agent remain autonomous without allowing that autonomy to become unlimited authority.**
-
-Recommended compact product explanation:
-
-> **The model interprets intent and proposes actions. UCII independently verifies who the agent is and whether it currently has delegated authority for the exact consequential action. Routine authorized work proceeds autonomously. Exceptional work returns to the human for one-time judgment. Standing authority can be revoked without destroying the agent's identity.**
+> **The model interprets intent and proposes actions. UCII independently verifies who the agent is and whether it currently has delegated authority; Guardian enforces economic limits and requires that authority before consequential execution. Routine authorized work proceeds autonomously, exceptional work returns to the human for one-time judgment, and standing authority can be revoked without destroying the agent's identity.**
 
 Recommended closing:
 
 > **We don't prevent AI from being autonomous. We prevent autonomy from becoming unlimited authority.**
 
+Alternative closing:
+
+> **Powerful AI does not have to mean unlimited authority. Guardian keeps autonomy useful by making its authority explicit, bounded, auditable, and revocable.**
+
+## Claim discipline
+
+Do **not** claim Guardian or UCII is the first system to use cryptographic identity, delegated capability, policy enforcement, or revocation for AI agents. Adjacent work exists.
+
+Do **not** claim Guardian solves alignment, guarantees benevolent model behavior, eliminates prompt injection, or eliminates all AI risk.
+
+Do **not** imply zero risk. The intended property is **bounded risk and externally enforced authority**.
+
+Strongest defensible claim:
+
+> **Guardian is a working autonomous application demonstrating a complete human-controlled authority lifecycle against real UCII infrastructure, with protected execution outside the LLM's authority.**
+
+Before naming/comparing an external project publicly, verify its current public source and exact technical claim. The hackathon submission does not require a historical-priority argument.
+
 ## What not to spend demo time proving
 
-Do not dilute the submission by expanding into:
+Do not dilute the submission with:
 
 - a generalized workflow builder;
 - many executor domains;
 - a multi-agent swarm;
 - Guardian-to-Guardian networking;
 - a broad payment demo merely because x402 exists;
-- a generalized RBAC system;
-- a large voice assistant architecture;
-- claims that Guardian solves all AI alignment or model-safety problems;
-- claims of historical priority that are not required by the judging criteria.
+- generalized RBAC;
+- a large voice architecture;
+- optional infrastructure that does not strengthen the core proof;
+- claims that Guardian solves all AI alignment/model-safety problems;
+- historical-priority claims;
+- long cryptography or daemon explanations before the judge understands the product.
 
-The strongest submission is the already-working narrow vertical slice, made easy to understand.
+The strongest submission is the narrow working vertical slice made impossible to misunderstand.
+
+## Presentation rule
+
+The judge should leave with this realization:
+
+> **This isn't really about buying office supplies. This is about how we can give autonomous AI real-world power without giving it unlimited authority.**
+
+Everything in the final presentation should serve that realization.
 
 ## Post-hackathon product lesson: Time-to-UCII
 
 Guardian also provides a useful integration baseline.
 
-Guardian was built as a new application while simultaneously integrating UCII identity, delegated authority, protected execution, escalation, revocation, and provenance. This suggests a future UCII developer-experience metric:
+Guardian was built as a new application while integrating UCII identity, delegated authority, protected execution, escalation, revocation, and provenance. This suggests a future UCII developer-experience metric:
 
 > **Time to First Authorized Action**
 
@@ -326,6 +501,6 @@ unidentified/unbounded agent
 -> auditable provenance
 ```
 
-The post-hackathon goal should be to reduce that integration cost dramatically through SDKs, reference patterns, and documented first-party entitlement behavior.
+The post-hackathon goal should be to reduce that integration cost through SDKs, reference patterns, and documented first-party entitlement behavior.
 
-This is a future UCII engineering initiative, not additional Guardian hackathon scope.
+This is future UCII engineering work, not additional Guardian hackathon scope.
