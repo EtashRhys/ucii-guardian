@@ -1,7 +1,9 @@
 """Minimal Guardian browser interface.
 
-This layer presents Guardian state only.
-It does not create authority, approve actions, or execute consequential work.
+This layer exposes bounded human lifecycle controls and Guardian state.
+
+Grant scope, Guardian identity, and lifecycle mutation inputs remain
+server-held. Browser input cannot invent standing-authority identity or scope.
 """
 
 from __future__ import annotations
@@ -18,8 +20,10 @@ from starlette.routing import Route
 from ucii_guardian.agent import build_guardian_agent
 from ucii_guardian.authority import AuthorityDecision
 from ucii_guardian.authority_lifecycle import (
+    AuthorityGrantResult,
     AuthorityRevocationResult,
     GuardianAuthorityLifecycleError,
+    grant_standing_authority,
     revoke_active_authority,
 )
 from ucii_guardian.identity import GuardianIdentityConfig
@@ -49,6 +53,10 @@ class ActiveAuthorityContext:
     outcome: GuardianWorkflowOutcome
     request_value: str
     config: GuardianIdentityConfig
+
+
+GUARDIAN_STANDING_OPERATION = "guardian.purchase.office_supply"
+GUARDIAN_STANDING_GRANTED_BY = "guardian-human-owner"
 
 
 _pending_context: PendingEscalationContext | None = None
@@ -95,6 +103,7 @@ def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
             ),
             "approve_disabled": "disabled",
             "deny_disabled": "disabled",
+            "grant_disabled": "",
             "revoke_disabled": "disabled",
         }
 
@@ -158,6 +167,7 @@ def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
             "</li>"
         )
 
+    grant_disabled = ""
     revoke_disabled = "disabled"
 
     if (
@@ -165,6 +175,7 @@ def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
         and outcome.authority.authority_state == "ACTIVE"
         and outcome.authority.authority_id
     ):
+        grant_disabled = "disabled"
         revoke_disabled = ""
 
     return {
@@ -175,6 +186,7 @@ def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
         "timeline": "".join(timeline_items),
         "approve_disabled": approve_disabled,
         "deny_disabled": deny_disabled,
+        "grant_disabled": grant_disabled,
         "revoke_disabled": revoke_disabled,
     }
 
@@ -183,13 +195,30 @@ def render_guardian_page(
     *,
     outcome: GuardianWorkflowOutcome | None = None,
     request_value: str = "",
+    grant: AuthorityGrantResult | None = None,
     revocation: AuthorityRevocationResult | None = None,
     lifecycle_message: str | None = None,
 ) -> str:
     state = _render_outcome(outcome)
 
+    if grant is not None:
+        state["authority"] = "ACTIVE"
+        state["grant_disabled"] = "disabled"
+        state["revoke_disabled"] = "disabled"
+        state["reason"] = (
+            "Standing authority granted. UCII created a fresh bounded ACTIVE "
+            "delegation for Guardian. The next real request must still perform "
+            "a fresh authority check before consequential execution."
+        )
+        state["timeline"] += (
+            "<li><strong>AUTHORITY_GRANTED</strong>"
+            "<span class=\"muted\">UCII authoritatively confirmed a fresh "
+            "ACTIVE standing-authority grant.</span></li>"
+        )
+
     if revocation is not None:
         state["authority"] = "REVOKED"
+        state["grant_disabled"] = ""
         state["revoke_disabled"] = "disabled"
         state["reason"] = (
             "Authority revoked. This delegated authority grant is no longer "
@@ -299,6 +328,10 @@ button {
     background: #df5f6b;
     color: #25080b;
 }
+.grant {
+    background: #8ea5ff;
+    color: #081022;
+}
 .revoke {
     background: #f0a45d;
     color: #271305;
@@ -397,8 +430,15 @@ placeholder="Example: Purchase one printer cartridge under $80.">{request_value}
 </section>
 
 <aside class="card">
-<div class="label">Human judgment</div>
+<div class="label">Human control</div>
 <p class="muted">{reason}</p>
+
+<form method="post" action="/grant">
+<div class="actions">
+<button class="grant" type="submit" {grant_disabled}>Grant Standing Authority</button>
+</div>
+</form>
+
 <form method="post" action="/decision">
 <div class="actions">
 <button class="approve" type="submit" name="decision" value="APPROVE_ONCE" {approve_disabled}>Approve Once</button>
@@ -438,6 +478,7 @@ permission to execute a consequential action.
         "{timeline}": state["timeline"],
         "{approve_disabled}": state["approve_disabled"],
         "{deny_disabled}": state["deny_disabled"],
+        "{grant_disabled}": state["grant_disabled"],
         "{revoke_disabled}": state["revoke_disabled"],
     }
 
@@ -546,6 +587,36 @@ async def evaluate(request: Request) -> HTMLResponse:
     )
 
 
+async def grant(request: Request) -> HTMLResponse:
+    _, config, _, _ = build_runtime()
+
+    try:
+        result = grant_standing_authority(
+            config=config,
+            operation=GUARDIAN_STANDING_OPERATION,
+            granted_by=GUARDIAN_STANDING_GRANTED_BY,
+        )
+    except GuardianAuthorityLifecycleError:
+        return HTMLResponse(
+            render_guardian_page(
+                lifecycle_message=(
+                    "Grant failed closed. Guardian has not established a new "
+                    "standing authority grant."
+                ),
+            ),
+            status_code=409,
+        )
+
+    _set_pending_context(None)
+    _set_active_authority_context(None)
+
+    return HTMLResponse(
+        render_guardian_page(
+            grant=result,
+        )
+    )
+
+
 async def revoke(request: Request) -> HTMLResponse:
     context = _get_active_authority_context()
 
@@ -626,6 +697,7 @@ app = Starlette(
     routes=[
         Route("/", homepage, methods=["GET"]),
         Route("/evaluate", evaluate, methods=["POST"]),
+        Route("/grant", grant, methods=["POST"]),
         Route("/revoke", revoke, methods=["POST"]),
         Route("/decision", decide, methods=["POST"]),
     ],

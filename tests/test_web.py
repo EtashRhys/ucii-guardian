@@ -12,6 +12,7 @@ def test_guardian_page_contains_required_demo_surfaces() -> None:
         "Guardian Decision",
         "Authority",
         "Execution",
+        "Grant Standing Authority",
         "Approve Once",
         "Deny",
         "Activity &amp; provenance",
@@ -600,6 +601,234 @@ def test_revoke_failure_keeps_active_authority_fail_closed(
     assert (
         "Revocation failed closed. "
         "The delegated authority remains ACTIVE."
+        in response.text
+    )
+
+    assert (
+        'class="revoke" type="submit" >'
+        "Revoke Authority</button>"
+        in response.text
+    )
+
+
+def test_initial_grant_control_is_enabled() -> None:
+    page = render_guardian_page()
+
+    assert (
+        'class="grant" type="submit" >'
+        "Grant Standing Authority</button>"
+        in page
+    )
+
+
+def test_grant_route_uses_server_held_identity_scope_and_grantor(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+
+    config = SimpleNamespace(
+        identity_id="guardian-id",
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            config,
+            object(),
+            tmp_path,
+        ),
+    )
+
+    def fake_grant_standing_authority(**kwargs):
+        calls.append(kwargs)
+
+        return web.AuthorityGrantResult(
+            authority_id="fresh-authority-e",
+            identity_id="guardian-id",
+            authority_state="ACTIVE",
+            allowed_operations=(
+                "guardian.purchase.office_supply",
+            ),
+            granted_by="guardian-human-owner",
+            granted_at="2026-09-13T20:00:00+00:00",
+        )
+
+    monkeypatch.setattr(
+        web,
+        "grant_standing_authority",
+        fake_grant_standing_authority,
+    )
+
+    web._set_pending_context(None)
+    web._set_active_authority_context(None)
+
+    client = TestClient(web.app)
+
+    response = client.post(
+        "/grant",
+        data={
+            "identity_id": "attacker-identity",
+            "operation": "attacker.operation",
+            "granted_by": "attacker",
+            "controller_authority": "attacker-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+    assert calls[0] == {
+        "config": config,
+        "operation": web.GUARDIAN_STANDING_OPERATION,
+        "granted_by": web.GUARDIAN_STANDING_GRANTED_BY,
+    }
+
+    assert calls[0]["operation"] == (
+        "guardian.purchase.office_supply"
+    )
+
+    assert calls[0]["granted_by"] == (
+        "guardian-human-owner"
+    )
+
+    assert "attacker-identity" not in repr(calls[0])
+    assert "attacker.operation" not in repr(calls[0])
+    assert "attacker-secret" not in repr(calls[0])
+
+    assert "ACTIVE" in response.text
+    assert "AUTHORITY_GRANTED" in response.text
+    assert "Standing authority granted." in response.text
+
+    assert (
+        'class="grant" type="submit" disabled>'
+        "Grant Standing Authority</button>"
+        in response.text
+    )
+
+    assert (
+        'class="revoke" type="submit" disabled>'
+        "Revoke Authority</button>"
+        in response.text
+    )
+
+
+def test_grant_failure_fails_closed_without_active_claim(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            SimpleNamespace(identity_id="guardian-id"),
+            object(),
+            tmp_path,
+        ),
+    )
+
+    def fail_closed(**kwargs):
+        raise web.GuardianAuthorityLifecycleError(
+            "synthetic grant failure"
+        )
+
+    monkeypatch.setattr(
+        web,
+        "grant_standing_authority",
+        fail_closed,
+    )
+
+    client = TestClient(web.app)
+
+    response = client.post(
+        "/grant",
+        data={},
+    )
+
+    assert response.status_code == 409
+
+    assert (
+        "Grant failed closed. Guardian has not established "
+        "a new standing authority grant."
+        in response.text
+    )
+
+    assert "AUTHORITY_GRANTED" not in response.text
+
+    assert (
+        'class="grant" type="submit" >'
+        "Grant Standing Authority</button>"
+        in response.text
+    )
+
+
+def test_active_authority_disables_grant_control(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+    from ucii_guardian.authority import AuthorityDecision
+
+    active_authority = SimpleNamespace(
+        decision=AuthorityDecision.ALLOW,
+        authority_state="ACTIVE",
+        authority_id="trusted-authority-e",
+    )
+
+    outcome = SimpleNamespace(
+        authority=active_authority,
+        execution=SimpleNamespace(executed=True),
+        escalation=None,
+        human_decision=None,
+        provenance=(),
+    )
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            SimpleNamespace(identity_id="guardian-id"),
+            object(),
+            tmp_path,
+        ),
+    )
+
+    monkeypatch.setattr(
+        web,
+        "run_guardian_request",
+        lambda **kwargs: outcome,
+    )
+
+    client = TestClient(web.app)
+
+    response = client.post(
+        "/evaluate",
+        data={
+            "request": (
+                "Purchase one printer cartridge under $80."
+            )
+        },
+    )
+
+    assert response.status_code == 200
+
+    assert (
+        'class="grant" type="submit" disabled>'
+        "Grant Standing Authority</button>"
         in response.text
     )
 
