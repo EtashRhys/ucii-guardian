@@ -821,3 +821,301 @@ def test_pending_escalation_continuation_does_not_rerun_security_boundaries(
         ProvenanceEventType.EXECUTION_STARTED,
         ProvenanceEventType.EXECUTION_COMPLETED,
     )
+
+
+
+
+def test_active_authority_within_budget_executes(
+    tmp_path: Path,
+    monkeypatch,
+    config,
+) -> None:
+    from ucii_guardian.budget import GuardianBudgetPolicy
+
+    action = ActionRequest(
+        requester="human:test",
+        guardian_identity=IDENTITY_ID,
+        operation=ROUTINE_OPERATION,
+        target="office-supply:printer-cartridge",
+        parameters={
+            "quantity": 1,
+            "max_price_usd": 35.0,
+        },
+        request_id="request-budget-within",
+        requested_at=datetime(
+            2026,
+            9,
+            13,
+            20,
+            0,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    authority = authority_fact(
+        action,
+        decision=AuthorityDecision.ALLOW,
+        state="ACTIVE",
+    )
+
+    calls = install_boundaries(
+        monkeypatch,
+        action=action,
+        authority=authority,
+    )
+
+    recorder = GuardianProvenanceRecorder(
+        tmp_path / "provenance.jsonl"
+    )
+
+    outcome = workflow.run_guardian_request(
+        agent=object(),
+        request="Purchase one cartridge for $35.",
+        config=config,
+        recorder=recorder,
+        receipt_directory=tmp_path / "receipts",
+        budget_policy=GuardianBudgetPolicy.from_value("500.00"),
+    )
+
+    assert calls == [
+        "STRANDS",
+        "IDENTITY",
+        "AUTHORITY",
+        "EXECUTE",
+    ]
+    assert outcome.authority.decision is AuthorityDecision.ALLOW
+    assert outcome.authority.authority_state == "ACTIVE"
+    assert outcome.execution is not None
+    assert outcome.escalation is None
+
+
+def test_active_authority_over_budget_stops_before_execution(
+    tmp_path: Path,
+    monkeypatch,
+    config,
+) -> None:
+    from ucii_guardian.budget import GuardianBudgetPolicy
+
+    action = ActionRequest(
+        requester="human:test",
+        guardian_identity=IDENTITY_ID,
+        operation=ROUTINE_OPERATION,
+        target="office-supply:printer-cartridge",
+        parameters={
+            "quantity": 1,
+            "max_price_usd": 750.0,
+        },
+        request_id="request-budget-over",
+        requested_at=datetime(
+            2026,
+            9,
+            13,
+            20,
+            1,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    authority = authority_fact(
+        action,
+        decision=AuthorityDecision.ALLOW,
+        state="ACTIVE",
+    )
+
+    calls = install_boundaries(
+        monkeypatch,
+        action=action,
+        authority=authority,
+    )
+
+    recorder = GuardianProvenanceRecorder(
+        tmp_path / "provenance.jsonl"
+    )
+
+    outcome = workflow.run_guardian_request(
+        agent=object(),
+        request="Purchase one item for $750.",
+        config=config,
+        recorder=recorder,
+        receipt_directory=tmp_path / "receipts",
+        budget_policy=GuardianBudgetPolicy.from_value("500.00"),
+    )
+
+    assert calls == [
+        "STRANDS",
+        "IDENTITY",
+        "AUTHORITY",
+    ]
+    assert outcome.authority.decision is AuthorityDecision.ALLOW
+    assert outcome.authority.authority_state == "ACTIVE"
+    assert outcome.execution is None
+    assert outcome.escalation is not None
+    assert outcome.escalation.reason.startswith(
+        "BUDGET_RANGE_EXCEEDED:"
+    )
+
+
+
+def test_over_budget_approve_once_executes_exact_action(
+    tmp_path: Path,
+    monkeypatch,
+    config,
+) -> None:
+    from ucii_guardian.budget import GuardianBudgetPolicy
+
+    action = ActionRequest(
+        requester="human:test",
+        guardian_identity=IDENTITY_ID,
+        operation=ROUTINE_OPERATION,
+        target="office-supply:printer-cartridge",
+        parameters={
+            "quantity": 1,
+            "max_price_usd": 750.0,
+        },
+        request_id="request-budget-approve",
+        requested_at=datetime(
+            2026,
+            9,
+            13,
+            20,
+            2,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    authority = authority_fact(
+        action,
+        decision=AuthorityDecision.ALLOW,
+        state="ACTIVE",
+    )
+
+    calls = install_boundaries(
+        monkeypatch,
+        action=action,
+        authority=authority,
+    )
+
+    recorder = GuardianProvenanceRecorder(
+        tmp_path / "provenance.jsonl"
+    )
+
+    pending = workflow.run_guardian_request(
+        agent=object(),
+        request="Purchase one item for $750.",
+        config=config,
+        recorder=recorder,
+        receipt_directory=tmp_path / "receipts",
+        budget_policy=GuardianBudgetPolicy.from_value("500.00"),
+    )
+
+    assert calls == [
+        "STRANDS",
+        "IDENTITY",
+        "AUTHORITY",
+    ]
+    assert pending.execution is None
+    assert pending.escalation is not None
+
+    completed = workflow.continue_guardian_escalation(
+        outcome=pending,
+        decision=HumanDecision.APPROVE_ONCE,
+        recorder=recorder,
+        receipt_directory=tmp_path / "receipts",
+    )
+
+    assert calls == [
+        "STRANDS",
+        "IDENTITY",
+        "AUTHORITY",
+        "EXECUTE",
+    ]
+    assert completed.human_decision is not None
+    assert completed.human_decision.decision is HumanDecision.APPROVE_ONCE
+    assert completed.execution is not None
+
+    assert event_types(completed) == (
+        ProvenanceEventType.REQUEST_RECEIVED,
+        ProvenanceEventType.IDENTITY_VERIFIED,
+        ProvenanceEventType.AUTHORITY_CHECKED,
+        ProvenanceEventType.AUTHORIZED,
+        ProvenanceEventType.HUMAN_APPROVED,
+        ProvenanceEventType.EXECUTION_STARTED,
+        ProvenanceEventType.EXECUTION_COMPLETED,
+    )
+
+
+def test_over_budget_deny_never_executes(
+    tmp_path: Path,
+    monkeypatch,
+    config,
+) -> None:
+    from ucii_guardian.budget import GuardianBudgetPolicy
+
+    action = ActionRequest(
+        requester="human:test",
+        guardian_identity=IDENTITY_ID,
+        operation=ROUTINE_OPERATION,
+        target="office-supply:printer-cartridge",
+        parameters={
+            "quantity": 1,
+            "max_price_usd": 750.0,
+        },
+        request_id="request-budget-deny",
+        requested_at=datetime(
+            2026,
+            9,
+            13,
+            20,
+            3,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    authority = authority_fact(
+        action,
+        decision=AuthorityDecision.ALLOW,
+        state="ACTIVE",
+    )
+
+    calls = install_boundaries(
+        monkeypatch,
+        action=action,
+        authority=authority,
+    )
+
+    recorder = GuardianProvenanceRecorder(
+        tmp_path / "provenance.jsonl"
+    )
+
+    pending = workflow.run_guardian_request(
+        agent=object(),
+        request="Purchase one item for $750.",
+        config=config,
+        recorder=recorder,
+        receipt_directory=tmp_path / "receipts",
+        budget_policy=GuardianBudgetPolicy.from_value("500.00"),
+    )
+
+    denied = workflow.continue_guardian_escalation(
+        outcome=pending,
+        decision=HumanDecision.DENY,
+        recorder=recorder,
+        receipt_directory=tmp_path / "receipts",
+    )
+
+    assert calls == [
+        "STRANDS",
+        "IDENTITY",
+        "AUTHORITY",
+    ]
+    assert denied.human_decision is not None
+    assert denied.human_decision.decision is HumanDecision.DENY
+    assert denied.execution is None
+
+    assert event_types(denied) == (
+        ProvenanceEventType.REQUEST_RECEIVED,
+        ProvenanceEventType.IDENTITY_VERIFIED,
+        ProvenanceEventType.AUTHORITY_CHECKED,
+        ProvenanceEventType.AUTHORIZED,
+        ProvenanceEventType.HUMAN_DENIED,
+    )

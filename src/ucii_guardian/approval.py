@@ -73,6 +73,7 @@ def create_escalation_request(
     action: ActionRequest,
     *,
     authority: AuthorityDecisionResult,
+    reason: str | None = None,
 ) -> EscalationRequest:
     """Create a human-review request only for ESCALATION_REQUIRED."""
 
@@ -84,17 +85,21 @@ def create_escalation_request(
             "Escalation requires Guardian authority evidence"
         )
 
-    if (
-        authority.decision
-        is not AuthorityDecision.ESCALATION_REQUIRED
-    ):
-        raise GuardianApprovalError(
-            "Escalation requires ESCALATION_REQUIRED"
-        )
+    standard_authority_escalation = (
+        authority.decision is AuthorityDecision.ESCALATION_REQUIRED
+        and authority.authority_state == "NOT_GRANTED"
+    )
+    budget_exception = (
+        authority.decision is AuthorityDecision.ALLOW
+        and authority.authority_state == "ACTIVE"
+        and isinstance(reason, str)
+        and reason.startswith("BUDGET_RANGE_EXCEEDED:")
+    )
 
-    if authority.authority_state != "NOT_GRANTED":
+    if not standard_authority_escalation and not budget_exception:
         raise GuardianApprovalError(
-            "Escalation requires NOT_GRANTED authority state"
+            "Escalation requires ESCALATION_REQUIRED / NOT_GRANTED "
+            "authority or an established ACTIVE budget exception"
         )
 
     if authority.identity_id != action.guardian_identity:
@@ -123,8 +128,12 @@ def create_escalation_request(
         request_id=action.request_id,
         authority_state=authority.authority_state,
         reason=(
-            "Current delegated authority does not cover this "
-            "specific action; human judgment is required."
+            reason
+            if reason is not None
+            else (
+                "Current delegated authority does not cover this "
+                "specific action; human judgment is required."
+            )
         ),
     )
 

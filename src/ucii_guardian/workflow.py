@@ -32,6 +32,10 @@ from ucii_guardian.authority import (
     AuthorityDecisionResult,
     check_authority,
 )
+from ucii_guardian.budget import (
+    GuardianBudgetError,
+    GuardianBudgetPolicy,
+)
 from ucii_guardian.executor import (
     OfficeSupplyExecutionResult,
     execute_office_supply,
@@ -107,17 +111,24 @@ def continue_guardian_escalation(
             "Guardian escalation has already executed"
         )
 
-    if (
+    standard_authority_escalation = (
         outcome.authority.decision
-        is not AuthorityDecision.ESCALATION_REQUIRED
-    ):
-        raise ValueError(
-            "Guardian continuation requires ESCALATION_REQUIRED"
-        )
+        is AuthorityDecision.ESCALATION_REQUIRED
+        and outcome.authority.authority_state == "NOT_GRANTED"
+    )
 
-    if outcome.authority.authority_state != "NOT_GRANTED":
+    budget_exception = (
+        outcome.authority.decision is AuthorityDecision.ALLOW
+        and outcome.authority.authority_state == "ACTIVE"
+        and outcome.escalation.reason.startswith(
+            "BUDGET_RANGE_EXCEEDED:"
+        )
+    )
+
+    if not standard_authority_escalation and not budget_exception:
         raise ValueError(
-            "Guardian continuation requires NOT_GRANTED authority"
+            "Guardian continuation requires an established "
+            "authority or budget escalation"
         )
 
     if outcome.escalation.request_id != outcome.action.request_id:
@@ -200,6 +211,7 @@ def run_guardian_request(
     config: GuardianIdentityConfig,
     recorder: GuardianProvenanceRecorder,
     receipt_directory: Path,
+    budget_policy: GuardianBudgetPolicy | None = None,
     human_decision: HumanDecision | None = None,
 ) -> GuardianWorkflowOutcome:
     """Run one bounded Guardian request through fresh security boundaries.
@@ -280,6 +292,41 @@ def run_guardian_request(
             raise ValueError(
                 "Human decision is not applicable to ALLOW"
             )
+
+        if budget_policy is not None:
+            if not isinstance(budget_policy, GuardianBudgetPolicy):
+                raise TypeError(
+                    "budget_policy must be GuardianBudgetPolicy"
+                )
+
+            requested_amount = action.parameters.get("max_price_usd")
+
+            if requested_amount is None:
+                raise GuardianBudgetError(
+                    "Budget-controlled action requires max_price_usd"
+                )
+
+            if not budget_policy.permits(requested_amount):
+                escalation = create_escalation_request(
+                    action,
+                    authority=authority,
+                    reason=(
+                        "BUDGET_RANGE_EXCEEDED: requested amount exceeds "
+                        "the human-controlled autonomous Budget Range."
+                    ),
+                )
+
+                return GuardianWorkflowOutcome(
+                    action=action,
+                    identity=identity,
+                    authority=authority,
+                    escalation=escalation,
+                    human_decision=None,
+                    execution=None,
+                    provenance=recorder.history_for_request(
+                        action.request_id
+                    ),
+                )
 
         recorder.record_execution_started(
             action,
