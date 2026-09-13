@@ -614,6 +614,7 @@ async def evaluate(request: Request) -> HTMLResponse:
         config=config,
         recorder=recorder,
         receipt_directory=receipts,
+        budget_policy=_get_budget_policy(),
     )
 
     if (

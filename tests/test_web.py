@@ -901,3 +901,69 @@ def test_budget_route_rejects_out_of_range_value_without_mutation() -> None:
     assert response.status_code == 400
     assert str(_get_budget_policy().max_transaction_usd) == "500.00"
     assert "failed closed" in response.text
+
+
+
+def test_evaluate_route_passes_server_held_budget_policy(
+    monkeypatch,
+) -> None:
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from starlette.testclient import TestClient
+
+    import ucii_guardian.web as web
+    from ucii_guardian.budget import GuardianBudgetPolicy
+
+    policy = GuardianBudgetPolicy.from_value("500.00")
+    web._set_budget_policy(policy)
+
+    captured = {}
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            object(),
+            object(),
+            Path("receipts"),
+        ),
+    )
+
+    def fake_run_guardian_request(**kwargs):
+        captured.update(kwargs)
+
+        return SimpleNamespace(
+            action=SimpleNamespace(request_id="request-budget-web"),
+            identity=SimpleNamespace(status="UCII_VERIFIED"),
+            authority=SimpleNamespace(
+                decision=web.AuthorityDecision.DENY,
+                authority_state="NOT_GRANTED",
+                authority_id=None,
+            ),
+            escalation=None,
+            human_decision=None,
+            execution=None,
+            provenance=(),
+        )
+
+    monkeypatch.setattr(
+        web,
+        "run_guardian_request",
+        fake_run_guardian_request,
+    )
+
+    response = TestClient(web.app).post(
+        "/evaluate",
+        data={
+            "request": "Purchase one printer cartridge for $35."
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["budget_policy"] is policy
+    assert (
+        str(captured["budget_policy"].max_transaction_usd)
+        == "500.00"
+    )
