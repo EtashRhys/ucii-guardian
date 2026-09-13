@@ -116,6 +116,33 @@ def test_active_allow_executes_one_bounded_action(
     assert receipt["quantity"] == 1
     assert receipt["max_price_usd"] == 80.0
 
+def test_executor_accepts_exact_5000_price_boundary(
+    tmp_path,
+) -> None:
+    action = make_action(
+        parameters={
+            "quantity": 1,
+            "max_price_usd": 5000,
+        }
+    )
+    authority = make_authority(action)
+
+    result = execute_office_supply(
+        action,
+        authority=authority,
+        receipt_directory=tmp_path,
+    )
+
+    assert result.executed is True
+
+    receipt = json.loads(
+        result.receipt_path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert receipt["max_price_usd"] == 5000.0
+
 
 @pytest.mark.parametrize(
     ("decision", "authority_state"),
@@ -351,7 +378,7 @@ def test_executor_rejects_target_outside_domain(
         },
         {
             "quantity": 1,
-            "max_price_usd": 501,
+            "max_price_usd": 5001,
         },
         {
             "quantity": 1,
