@@ -14,6 +14,7 @@ from ucii_guardian.authority import (
 )
 from ucii_guardian.authority_lifecycle import (
     GuardianAuthorityLifecycleError,
+    grant_standing_authority,
     revoke_active_authority,
 )
 from ucii_guardian.identity import GuardianIdentityConfig
@@ -35,6 +36,14 @@ ENTITLEMENT_PROOF = object()
 class FakeAuthorization:
     response = None
     calls = []
+
+    def grant_delegated(self, **kwargs):
+        type(self).calls.append(dict(kwargs))
+
+        if isinstance(type(self).response, Exception):
+            raise type(self).response
+
+        return type(self).response
 
     def revoke_delegated(self, **kwargs):
         type(self).calls.append(dict(kwargs))
@@ -413,4 +422,192 @@ def test_transport_failure_fails_closed(
             authority=active_authority,
             config=config,
             reason=REASON,
+        )
+
+
+def grant_response_for(**overrides):
+    response = {
+        "authority_id": "guardian-authority-new",
+        "identity_id": IDENTITY_ID,
+        "authority_state": "ACTIVE",
+        "allowed_operations": [OPERATION],
+        "granted_by": "guardian-human-owner",
+        "granted_at": "2026-09-13T19:00:00+00:00",
+    }
+
+    response.update(overrides)
+
+    return response
+
+
+def test_grant_uses_exact_public_sdk_entitlement_boundary(
+    monkeypatch,
+    config,
+) -> None:
+    proof_calls = install_fakes(
+        monkeypatch,
+        grant_response_for(),
+    )
+
+    result = grant_standing_authority(
+        config=config,
+        operation=OPERATION,
+        granted_by="guardian-human-owner",
+    )
+
+    assert FakeAuthorization.calls == [
+        {
+            "identity_id": IDENTITY_ID,
+            "allowed_operations": [OPERATION],
+            "granted_by": "guardian-human-owner",
+            "service_entitlement_proof": ENTITLEMENT_PROOF,
+        }
+    ]
+
+    assert (
+        "controller_authority"
+        not in FakeAuthorization.calls[0]
+    )
+
+    assert len(proof_calls) == 1
+    challenge = proof_calls[0]["challenge"]
+
+    assert challenge.subject_identity_id == IDENTITY_ID
+    assert challenge.credential_fingerprint == FINGERPRINT
+    assert challenge.method == "POST"
+    assert challenge.path == (
+        "/v1/authorization/delegated/grant"
+    )
+
+    assert result.authority_id == "guardian-authority-new"
+    assert result.identity_id == IDENTITY_ID
+    assert result.authority_state == "ACTIVE"
+    assert result.allowed_operations == (OPERATION,)
+    assert result.granted_by == "guardian-human-owner"
+    assert result.granted_at == (
+        "2026-09-13T19:00:00+00:00"
+    )
+
+
+@pytest.mark.parametrize(
+    ("operation", "granted_by"),
+    [
+        ("", "guardian-human-owner"),
+        ("   ", "guardian-human-owner"),
+        (None, "guardian-human-owner"),
+        (OPERATION, ""),
+        (OPERATION, "   "),
+        (OPERATION, None),
+    ],
+)
+def test_invalid_grant_input_fails_before_transport(
+    monkeypatch,
+    config,
+    operation,
+    granted_by,
+) -> None:
+    install_fakes(
+        monkeypatch,
+        grant_response_for(),
+    )
+
+    with pytest.raises(
+        GuardianAuthorityLifecycleError
+    ):
+        grant_standing_authority(
+            config=config,
+            operation=operation,
+            granted_by=granted_by,
+        )
+
+    assert FakeAuthorization.calls == []
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        None,
+        [],
+        {},
+        grant_response_for(authority_id=""),
+        grant_response_for(identity_id="different-identity"),
+        grant_response_for(authority_state="REVOKED"),
+        grant_response_for(allowed_operations=[]),
+        grant_response_for(
+            allowed_operations=["different.operation"],
+        ),
+        grant_response_for(
+            allowed_operations=[OPERATION, "different.operation"],
+        ),
+        grant_response_for(granted_by="different-grantor"),
+        grant_response_for(granted_at=""),
+    ],
+)
+def test_invalid_ucii_grant_response_fails_closed(
+    monkeypatch,
+    config,
+    response,
+) -> None:
+    install_fakes(
+        monkeypatch,
+        response,
+    )
+
+    with pytest.raises(
+        GuardianAuthorityLifecycleError
+    ):
+        grant_standing_authority(
+            config=config,
+            operation=OPERATION,
+            granted_by="guardian-human-owner",
+        )
+
+
+def test_grant_custody_fingerprint_mismatch_fails_closed(
+    monkeypatch,
+    config,
+) -> None:
+    install_fakes(
+        monkeypatch,
+        grant_response_for(),
+    )
+
+    monkeypatch.setattr(
+        lifecycle,
+        "load_guardian_signing_provider",
+        lambda path: SimpleNamespace(
+            fingerprint="different-fingerprint",
+        ),
+    )
+
+    with pytest.raises(
+        GuardianAuthorityLifecycleError,
+        match="fingerprint",
+    ):
+        grant_standing_authority(
+            config=config,
+            operation=OPERATION,
+            granted_by="guardian-human-owner",
+        )
+
+    assert FakeAuthorization.calls == []
+
+
+def test_grant_transport_failure_fails_closed(
+    monkeypatch,
+    config,
+) -> None:
+    install_fakes(
+        monkeypatch,
+        RuntimeError("synthetic grant transport failure"),
+    )
+
+    with pytest.raises(
+        GuardianAuthorityLifecycleError,
+        match="failed closed",
+    ):
+        grant_standing_authority(
+            config=config,
+            operation=OPERATION,
+            granted_by="guardian-human-owner",
         )
