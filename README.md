@@ -46,7 +46,7 @@ The governing rule is simple:
 
 ## The key demonstration
 
-With a human-selected Budget Range of **$101.28**:
+With a human-selected Budget Range of **$111.02**:
 
 | Request | UCII authority | Human policy | Result |
 | --- | --- | --- | --- |
@@ -175,6 +175,54 @@ Run the Guardian web application:
 ```
 
 Guardian's live protected authority lifecycle requires a provisioned UCII deployment and Guardian identity/custody configuration. The repository's tests exercise the boundaries without requiring judges to mutate a production UCII deployment.
+
+## Judge/Test Mode
+
+Guardian includes a resettable **Judge/Test Mode** for repeatable evaluation of the bounded-authority lifecycle without modifying production UCII delegated authority.
+
+> **IMPORTANT — JUDGE/TEST MODE IS INTENTIONALLY SCOPE-BOUNDED**
+>
+> Guardian is **not an unrestricted shopping agent**. This demonstration delegates only the `guardian.purchase.office_supply` operation. Being below the Budget Range does **not** create permission to purchase arbitrary goods or services.
+>
+> Autonomous execution requires **both** valid delegated operation scope **and** compliance with the human-controlled economic policy. Requests outside the office-supply operation are intentionally refused. **That is a security property, not a broken purchasing function.**
+
+Judge/Test Mode isolates the delegated-authority lifecycle while keeping Guardian identity verification real. Interactive replay therefore requires a provisioned Guardian identity/custody environment; private signing custody is intentionally not distributed in this public repository.
+
+The public tests verify Judge/Test isolation, production-boundary preservation, reset behavior, grant/revoke behavior, and post-revocation refusal without requiring access to Guardian private signing material.
+
+### Start Judge/Test Mode
+
+In a provisioned Guardian environment:
+
+```powershell
+$env:UCII_GUARDIAN_MODE = "judge-test"
+.venv\Scripts\python -m uvicorn ucii_guardian.web:app --host 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000`.
+
+### Canonical Judge/Test replay
+
+1. Click **Reset Demo/Test**.
+2. Click **Grant Standing Authority**.
+3. Set **Budget Range** to **$111.02**.
+4. Submit: `Purchase 2 boxes of blue ballpoint pens for a maximum total price of $35.`
+   - Expected: **ALLOW → Completed**.
+5. Submit: `Purchase 2 boxes of blue ballpoint pens for a maximum total price of $150.`
+   - Expected: **Awaiting human decision**.
+6. Click **Approve Once**.
+   - The exact exception executes; the Budget Range remains **$111.02**.
+7. Submit: `Purchase 3 boxes of blue ballpoint pens for a maximum total price of $175.`
+   - Expected: **Awaiting human decision** again.
+8. Click **Deny**.
+   - Expected: **No execution**.
+9. Click **Revoke Authority**.
+   - Guardian remains cryptographically verified, but isolated authority becomes `REVOKED`.
+10. Submit the original `$35` request again.
+    - Expected: **DENY → No execution**.
+11. Click **Reset Demo/Test** to return to the known initial state.
+
+> **Same Guardian. Same verified identity. Same request. Same budget. Different authority state — different execution outcome.**
 
 ## Demo and submission artifacts
 
