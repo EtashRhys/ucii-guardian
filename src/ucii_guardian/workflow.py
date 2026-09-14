@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ucii_guardian.action import ActionRequest
 from ucii_guardian.agent import propose_action
@@ -213,6 +213,9 @@ def run_guardian_request(
     receipt_directory: Path,
     budget_policy: GuardianBudgetPolicy | None = None,
     human_decision: HumanDecision | None = None,
+    authority_checker: (
+        Callable[..., AuthorityDecisionResult] | None
+    ) = None,
 ) -> GuardianWorkflowOutcome:
     """Run one bounded Guardian request through fresh security boundaries.
 
@@ -230,6 +233,11 @@ def run_guardian_request(
     DENY never enters the executor.
 
     This workflow cannot create or mutate standing delegated authority.
+
+    ``authority_checker`` is an explicit composition seam. When omitted,
+    Guardian uses the production ``check_authority`` boundary. A caller may
+    supply a different authority evaluator only through this explicit
+    server-side dependency.
     """
 
     if not isinstance(
@@ -258,11 +266,18 @@ def run_guardian_request(
         identity=identity,
     )
 
-    authority = check_authority(
-        action,
-        identity=identity,
-        config=config,
-    )
+    if authority_checker is None:
+        authority = check_authority(
+            action,
+            identity=identity,
+            config=config,
+        )
+    else:
+        authority = authority_checker(
+            action,
+            identity=identity,
+            config=config,
+        )
 
     recorder.record_authority(
         action,

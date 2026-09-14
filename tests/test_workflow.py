@@ -1119,3 +1119,103 @@ def test_over_budget_deny_never_executes(
         ProvenanceEventType.AUTHORIZED,
         ProvenanceEventType.HUMAN_DENIED,
     )
+
+
+def test_explicit_authority_checker_replaces_only_authority_boundary(
+    tmp_path: Path,
+    monkeypatch,
+    config,
+) -> None:
+    action = make_action(
+        request_id="request-explicit-authority-checker"
+    )
+
+    authority = authority_fact(
+        action,
+        decision=AuthorityDecision.ESCALATION_REQUIRED,
+        state="NOT_GRANTED",
+    )
+
+    calls = []
+    expected_config = config
+
+    def fake_propose(agent, request):
+        calls.append("STRANDS")
+        return action
+
+    def fake_verify(runtime_config):
+        calls.append("IDENTITY")
+        assert runtime_config is config
+        return identity_fact()
+
+    def forbidden_default_authority(*args, **kwargs):
+        raise AssertionError(
+            "production authority checker used despite explicit dependency"
+        )
+
+    def injected_authority_checker(
+        proposed,
+        *,
+        identity,
+        config,
+    ):
+        calls.append("INJECTED_AUTHORITY")
+        assert proposed is action
+        assert identity.status == GUARDIAN_VERIFIED
+        assert config is expected_config
+        return authority
+
+    def forbidden_execute(*args, **kwargs):
+        raise AssertionError(
+            "NOT_GRANTED authority entered executor"
+        )
+
+    monkeypatch.setattr(
+        workflow,
+        "propose_action",
+        fake_propose,
+    )
+    monkeypatch.setattr(
+        workflow,
+        "verify_guardian_identity",
+        fake_verify,
+    )
+    monkeypatch.setattr(
+        workflow,
+        "check_authority",
+        forbidden_default_authority,
+    )
+    monkeypatch.setattr(
+        workflow,
+        "execute_office_supply",
+        forbidden_execute,
+    )
+
+    recorder = GuardianProvenanceRecorder(
+        tmp_path / "provenance-explicit-checker.jsonl"
+    )
+
+    outcome = workflow.run_guardian_request(
+        agent=object(),
+        request="request requiring authority evaluation",
+        config=config,
+        recorder=recorder,
+        receipt_directory=tmp_path / "receipts",
+        authority_checker=injected_authority_checker,
+    )
+
+    assert calls == [
+        "STRANDS",
+        "IDENTITY",
+        "INJECTED_AUTHORITY",
+    ]
+
+    assert outcome.identity.status == GUARDIAN_VERIFIED
+    assert outcome.authority is authority
+    assert (
+        outcome.authority.decision
+        is AuthorityDecision.ESCALATION_REQUIRED
+    )
+    assert outcome.authority.authority_state == "NOT_GRANTED"
+    assert outcome.escalation is not None
+    assert outcome.execution is None
