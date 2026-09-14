@@ -1087,3 +1087,653 @@ def test_successful_revoke_clears_stale_pending_execution_ui(
         'value="DENY" disabled'
         in response.text
     )
+
+
+
+def test_server_side_judge_mode_injects_only_judge_authority_checker(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+    from ucii_guardian.authority import AuthorityDecision
+    from ucii_guardian.identity import GuardianIdentityConfig
+
+    config = GuardianIdentityConfig(
+        base_url="https://api.ucii.sportgen-ai.com",
+        identity_id="judge-guardian",
+        credential_id="judge-credential",
+        credential_fingerprint="judge-fingerprint",
+        custody_path=tmp_path / "custody.json",
+    )
+
+    fake_outcome = SimpleNamespace(
+        authority=SimpleNamespace(
+            decision=AuthorityDecision.ESCALATION_REQUIRED,
+            authority_state="NOT_GRANTED",
+            authority_id=None,
+        ),
+        execution=None,
+        escalation=object(),
+        human_decision=None,
+        provenance=(),
+    )
+
+    captured = {}
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_JUDGE_TEST,
+    )
+    monkeypatch.setattr(web, "_judge_authority_state", None)
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            config,
+            object(),
+            tmp_path,
+        ),
+    )
+
+    def fake_run_guardian_request(**kwargs):
+        captured.update(kwargs)
+        return fake_outcome
+
+    monkeypatch.setattr(
+        web,
+        "run_guardian_request",
+        fake_run_guardian_request,
+    )
+
+    client = TestClient(web.app)
+    response = client.post(
+        "/evaluate",
+        data={"request": "Purchase one office item for $35."},
+    )
+
+    assert response.status_code == 200
+    assert "authority_checker" in captured
+
+    judge_state = web._get_judge_authority_state(config)
+
+    assert captured["authority_checker"].__self__ is judge_state
+    assert captured["authority_checker"].__func__ is judge_state.check.__func__
+
+
+def test_production_mode_evaluate_does_not_inject_authority_checker(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+    from ucii_guardian.authority import AuthorityDecision
+
+    fake_outcome = SimpleNamespace(
+        authority=SimpleNamespace(
+            decision=AuthorityDecision.DENY,
+            authority_state="REVOKED",
+            authority_id=None,
+        ),
+        execution=None,
+        escalation=None,
+        human_decision=None,
+        provenance=(),
+    )
+
+    captured = {}
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_PRODUCTION,
+    )
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            object(),
+            object(),
+            tmp_path,
+        ),
+    )
+
+    def fake_run_guardian_request(**kwargs):
+        captured.update(kwargs)
+        return fake_outcome
+
+    monkeypatch.setattr(
+        web,
+        "run_guardian_request",
+        fake_run_guardian_request,
+    )
+
+    client = TestClient(web.app)
+    response = client.post(
+        "/evaluate",
+        data={"request": "Purchase one office item for $35."},
+    )
+
+    assert response.status_code == 200
+    assert "authority_checker" not in captured
+
+
+def test_judge_mode_grant_uses_only_isolated_authority_state(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from ucii_guardian import web
+    from ucii_guardian.identity import GuardianIdentityConfig
+
+    config = GuardianIdentityConfig(
+        base_url="https://api.ucii.sportgen-ai.com",
+        identity_id="judge-guardian",
+        credential_id="judge-credential",
+        credential_fingerprint="judge-fingerprint",
+        custody_path=tmp_path / "custody.json",
+    )
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_JUDGE_TEST,
+    )
+    monkeypatch.setattr(web, "_judge_authority_state", None)
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            config,
+            object(),
+            tmp_path,
+        ),
+    )
+
+    production_calls = []
+
+    def production_grant_must_not_run(**kwargs):
+        production_calls.append(kwargs)
+        raise AssertionError(
+            "Judge/Test Mode must not call production grant lifecycle"
+        )
+
+    monkeypatch.setattr(
+        web,
+        "grant_standing_authority",
+        production_grant_must_not_run,
+    )
+
+    web._set_pending_context(None)
+    web._set_active_authority_context(None)
+
+    client = TestClient(web.app)
+
+    response = client.post(
+        "/grant",
+        data={
+            "identity_id": "attacker-identity",
+            "operation": "attacker.operation",
+            "controller_authority": "attacker-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert production_calls == []
+
+    judge_state = web._get_judge_authority_state(config)
+
+    assert judge_state.authority_state == "ACTIVE"
+    assert judge_state.active_authority_id is not None
+
+    assert "JUDGE_AUTHORITY_GRANTED" in response.text
+    assert "isolated non-production" in response.text
+    assert "Production UCII authority remains untouched" in response.text
+
+    assert (
+        "UCII authoritatively confirmed a fresh "
+        "ACTIVE standing-authority grant."
+        not in response.text
+    )
+
+    replay = client.post(
+        "/grant",
+        data={},
+    )
+
+    assert replay.status_code == 409
+    assert judge_state.authority_state == "ACTIVE"
+
+    assert (
+        "Judge/Test grant failed closed."
+        in replay.text
+    )
+
+
+def test_production_mode_grant_still_uses_production_lifecycle(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+
+    config = SimpleNamespace(
+        identity_id="guardian-id",
+    )
+
+    calls = []
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_PRODUCTION,
+    )
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            config,
+            object(),
+            tmp_path,
+        ),
+    )
+
+    def fake_grant_standing_authority(**kwargs):
+        calls.append(kwargs)
+
+        return web.AuthorityGrantResult(
+            authority_id="production-authority",
+            identity_id="guardian-id",
+            authority_state="ACTIVE",
+            allowed_operations=(
+                web.GUARDIAN_STANDING_OPERATION,
+            ),
+            granted_by=web.GUARDIAN_STANDING_GRANTED_BY,
+            granted_at="2026-09-14T18:00:00+00:00",
+        )
+
+    monkeypatch.setattr(
+        web,
+        "grant_standing_authority",
+        fake_grant_standing_authority,
+    )
+
+    client = TestClient(web.app)
+    response = client.post("/grant", data={})
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+    assert calls[0] == {
+        "config": config,
+        "operation": web.GUARDIAN_STANDING_OPERATION,
+        "granted_by": web.GUARDIAN_STANDING_GRANTED_BY,
+    }
+
+    assert "AUTHORITY_GRANTED" in response.text
+    assert "JUDGE_AUTHORITY_GRANTED" not in response.text
+    assert "UCII authoritatively confirmed" in response.text
+
+
+def test_judge_mode_revoke_uses_only_isolated_authority_state(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from ucii_guardian import web
+    from ucii_guardian.identity import GuardianIdentityConfig
+
+    config = GuardianIdentityConfig(
+        base_url="https://api.ucii.sportgen-ai.com",
+        identity_id="judge-guardian",
+        credential_id="judge-credential",
+        credential_fingerprint="judge-fingerprint",
+        custody_path=tmp_path / "custody.json",
+    )
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_JUDGE_TEST,
+    )
+    monkeypatch.setattr(web, "_judge_authority_state", None)
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            config,
+            object(),
+            tmp_path,
+        ),
+    )
+
+    production_calls = []
+
+    def production_revoke_must_not_run(**kwargs):
+        production_calls.append(kwargs)
+        raise AssertionError(
+            "Judge/Test Mode must not call production revoke lifecycle"
+        )
+
+    monkeypatch.setattr(
+        web,
+        "revoke_active_authority",
+        production_revoke_must_not_run,
+    )
+
+    judge_state = web._get_judge_authority_state(config)
+    judge_state.grant()
+
+    assert judge_state.authority_state == "ACTIVE"
+
+    client = TestClient(web.app)
+    response = client.post(
+        "/revoke",
+        data={
+            "authority_id": "attacker-authority",
+            "controller_authority": "attacker-secret",
+        },
+    )
+
+    assert response.status_code == 200
+    assert production_calls == []
+
+    assert judge_state.authority_state == "REVOKED"
+    assert judge_state.active_authority_id is None
+
+    assert "JUDGE_AUTHORITY_REVOKED" in response.text
+    assert "isolated non-production" in response.text
+    assert "Production UCII authority remains untouched" in response.text
+
+    assert (
+        "UCII authoritatively confirmed the "
+        "exact delegated authority as REVOKED."
+        not in response.text
+    )
+
+    assert (
+        'class="grant" type="submit" disabled>'
+        "Grant Standing Authority</button>"
+        in response.text
+    )
+
+    assert (
+        'class="revoke" type="submit" disabled>'
+        "Revoke Authority</button>"
+        in response.text
+    )
+
+    replay = client.post(
+        "/revoke",
+        data={},
+    )
+
+    assert replay.status_code == 409
+    assert judge_state.authority_state == "REVOKED"
+
+    assert (
+        "Judge/Test revocation failed closed."
+        in replay.text
+    )
+
+
+def test_production_mode_revoke_still_uses_production_lifecycle(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from ucii_guardian import web
+    from ucii_guardian.authority import AuthorityDecision
+
+    trusted_authority = SimpleNamespace(
+        decision=AuthorityDecision.ALLOW,
+        authority_state="ACTIVE",
+        authority_id="trusted-production-authority",
+    )
+
+    outcome = SimpleNamespace(
+        authority=trusted_authority,
+        execution=None,
+        escalation=None,
+        human_decision=None,
+        provenance=(),
+    )
+
+    config = SimpleNamespace(
+        identity_id="guardian-id",
+    )
+
+    context = web.ActiveAuthorityContext(
+        outcome=outcome,
+        request_value="Purchase one office item for $35.",
+        config=config,
+    )
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_PRODUCTION,
+    )
+
+    calls = []
+
+    def fake_revoke_active_authority(**kwargs):
+        calls.append(kwargs)
+
+        return web.AuthorityRevocationResult(
+            authority_id="trusted-production-authority",
+            identity_id="guardian-id",
+            authority_state="REVOKED",
+            allowed_operations=(
+                web.GUARDIAN_STANDING_OPERATION,
+            ),
+            granted_by=web.GUARDIAN_STANDING_GRANTED_BY,
+            revoked_at="2026-09-14T18:30:00+00:00",
+            revocation_reason=(
+                "human_revoked_guardian_web_authority"
+            ),
+        )
+
+    monkeypatch.setattr(
+        web,
+        "revoke_active_authority",
+        fake_revoke_active_authority,
+    )
+
+    web._set_active_authority_context(context)
+    web._set_pending_context(None)
+
+    client = TestClient(web.app)
+    response = client.post("/revoke", data={})
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+
+    assert calls[0]["authority"] is trusted_authority
+    assert calls[0]["config"] is config
+    assert calls[0]["reason"] == (
+        "human_revoked_guardian_web_authority"
+    )
+
+    assert "AUTHORITY_REVOKED" in response.text
+    assert "JUDGE_AUTHORITY_REVOKED" not in response.text
+    assert "UCII authoritatively confirmed" in response.text
+
+
+def test_judge_mode_reset_returns_known_initial_state(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from ucii_guardian import web
+    from ucii_guardian.budget import GuardianBudgetPolicy
+    from ucii_guardian.identity import GuardianIdentityConfig
+
+    config = GuardianIdentityConfig(
+        base_url="https://api.ucii.sportgen-ai.com",
+        identity_id="judge-guardian",
+        credential_id="judge-credential",
+        credential_fingerprint="judge-fingerprint",
+        custody_path=tmp_path / "custody.json",
+    )
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_JUDGE_TEST,
+    )
+    monkeypatch.setattr(web, "_judge_authority_state", None)
+
+    monkeypatch.setattr(
+        web,
+        "build_runtime",
+        lambda: (
+            object(),
+            config,
+            object(),
+            tmp_path,
+        ),
+    )
+
+    judge_state = web._get_judge_authority_state(config)
+    judge_state.grant()
+
+    web._set_pending_context(object())
+    web._set_active_authority_context(object())
+    web._set_budget_policy(
+        GuardianBudgetPolicy.from_value("111.02")
+    )
+
+    assert judge_state.authority_state == "ACTIVE"
+    assert web._get_pending_context_for_test() is not None if hasattr(
+        web,
+        "_get_pending_context_for_test",
+    ) else True
+    assert web._get_active_authority_context() is not None
+    assert (
+        web._get_budget_policy().max_transaction_usd
+        == GuardianBudgetPolicy.from_value("111.02").max_transaction_usd
+    )
+
+    client = TestClient(web.app)
+    response = client.post("/reset", data={})
+
+    assert response.status_code == 200
+
+    assert judge_state.authority_state == "NOT_GRANTED"
+    assert judge_state.active_authority_id is None
+
+    assert web._get_active_authority_context() is None
+    assert web._pending_context is None
+    assert (
+        web._get_budget_policy().max_transaction_usd
+        == GuardianBudgetPolicy.from_value("0.00").max_transaction_usd
+    )
+
+    assert "JUDGE_STATE_RESET" in response.text
+    assert "NOT_GRANTED" in response.text
+    assert "Budget Range is $0.00" in response.text
+    assert "Reset Demo/Test" in response.text
+
+    assert (
+        'class="grant" type="submit" >'
+        "Grant Standing Authority</button>"
+        in response.text
+    )
+
+    assert (
+        'class="revoke" type="submit" disabled>'
+        "Revoke Authority</button>"
+        in response.text
+    )
+
+
+def test_production_mode_reset_is_unavailable_and_changes_nothing(
+    monkeypatch,
+) -> None:
+    from ucii_guardian import web
+    from ucii_guardian.budget import GuardianBudgetPolicy
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_PRODUCTION,
+    )
+
+    web._set_budget_policy(
+        GuardianBudgetPolicy.from_value("222.22")
+    )
+
+    client = TestClient(web.app)
+    response = client.post("/reset", data={})
+
+    assert response.status_code == 404
+
+    assert (
+        web._get_budget_policy().max_transaction_usd
+        == GuardianBudgetPolicy.from_value("222.22").max_transaction_usd
+    )
+
+    assert "Reset Demo/Test" not in response.text
+    assert "JUDGE_STATE_RESET" not in response.text
+
+
+def test_judge_mode_page_is_visibly_identified_as_non_production(
+    monkeypatch,
+) -> None:
+    from ucii_guardian import web
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_JUDGE_TEST,
+    )
+
+    page = web.render_guardian_page()
+
+    assert (
+        "JUDGE / TEST MODE ? isolated non-production authority state"
+        in page
+    )
+    assert "Identity verification remains real." in page
+    assert (
+        "Judge/Test grant, revoke, and reset are isolated and repeatable."
+        in page
+    )
+    assert (
+        "Production Guardian uses protected, expiring, one-use UCII "
+        "lifecycle authorization."
+        in page
+    )
+    assert 'class="judge-mode-notice"' in page
+    assert "Reset Demo/Test" in page
+
+
+def test_production_mode_page_has_no_judge_test_disclosure(
+    monkeypatch,
+) -> None:
+    from ucii_guardian import web
+
+    monkeypatch.setattr(
+        web,
+        "_guardian_runtime_mode",
+        web.GUARDIAN_MODE_PRODUCTION,
+    )
+
+    page = web.render_guardian_page()
+
+    assert "JUDGE / TEST MODE" not in page
+    assert "isolated non-production authority state" not in page
+    assert 'class="judge-mode-notice"' not in page
+    assert "Reset Demo/Test" not in page

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape
+import os
 from pathlib import Path
 
 from starlette.applications import Starlette
@@ -31,6 +32,10 @@ from ucii_guardian.authority_lifecycle import (
     revoke_active_authority,
 )
 from ucii_guardian.identity import GuardianIdentityConfig
+from ucii_guardian.judge_authority import (
+    JudgeAuthorityError,
+    JudgeAuthorityState,
+)
 from ucii_guardian.provenance_recorder import GuardianProvenanceRecorder
 from ucii_guardian.approval import HumanDecision
 from ucii_guardian.workflow import (
@@ -62,10 +67,28 @@ class ActiveAuthorityContext:
 GUARDIAN_STANDING_OPERATION = "guardian.purchase.office_supply"
 GUARDIAN_STANDING_GRANTED_BY = "guardian-human-owner"
 
+GUARDIAN_MODE_PRODUCTION = "production"
+GUARDIAN_MODE_JUDGE_TEST = "judge-test"
+GUARDIAN_MODE_ENVIRONMENT_VARIABLE = "UCII_GUARDIAN_MODE"
+
+_guardian_runtime_mode = os.environ.get(
+    GUARDIAN_MODE_ENVIRONMENT_VARIABLE,
+    GUARDIAN_MODE_PRODUCTION,
+).strip().lower()
+
+if _guardian_runtime_mode not in {
+    GUARDIAN_MODE_PRODUCTION,
+    GUARDIAN_MODE_JUDGE_TEST,
+}:
+    raise RuntimeError(
+        "UCII_GUARDIAN_MODE must be 'production' or 'judge-test'"
+    )
+
 
 _pending_context: PendingEscalationContext | None = None
 _active_authority_context: ActiveAuthorityContext | None = None
 _budget_policy = GuardianBudgetPolicy.from_value("0.00")
+_judge_authority_state: JudgeAuthorityState | None = None
 
 
 def _set_pending_context(
@@ -100,6 +123,30 @@ def _set_budget_policy(policy: GuardianBudgetPolicy) -> None:
 
 def _get_budget_policy() -> GuardianBudgetPolicy:
     return _budget_policy
+
+
+def _is_judge_test_mode() -> bool:
+    return _guardian_runtime_mode == GUARDIAN_MODE_JUDGE_TEST
+
+
+def _get_judge_authority_state(
+    config: GuardianIdentityConfig,
+) -> JudgeAuthorityState:
+    global _judge_authority_state
+
+    if not _is_judge_test_mode():
+        raise RuntimeError(
+            "Judge authority state is unavailable in production mode"
+        )
+
+    if _judge_authority_state is None:
+        _judge_authority_state = JudgeAuthorityState(
+            identity_id=config.identity_id,
+            credential_fingerprint=config.credential_fingerprint,
+            operation=GUARDIAN_STANDING_OPERATION,
+        )
+
+    return _judge_authority_state
 
 
 def _render_outcome(outcome: GuardianWorkflowOutcome | None) -> dict[str, str]:
@@ -217,8 +264,62 @@ def render_guardian_page(
     revocation: AuthorityRevocationResult | None = None,
     lifecycle_message: str | None = None,
     budget_message: str | None = None,
+    judge_authority_state: str | None = None,
 ) -> str:
     state = _render_outcome(outcome)
+
+    if judge_authority_state == "NOT_GRANTED":
+        state["authority"] = "NOT_GRANTED"
+        state["execution"] = "No action"
+        state["approve_disabled"] = "disabled"
+        state["deny_disabled"] = "disabled"
+        state["grant_disabled"] = ""
+        state["revoke_disabled"] = "disabled"
+        state["reason"] = (
+            "Judge/Test Mode is at its known initial authority state. "
+            "No isolated standing authority is currently granted."
+        )
+        state["timeline"] += (
+            "<li><strong>JUDGE_STATE_RESET</strong>"
+            "<span class=\"muted\">Isolated non-production Judge/Test "
+            "authority is NOT_GRANTED. Production UCII authority remains "
+            "untouched.</span></li>"
+        )
+
+    if judge_authority_state == "ACTIVE":
+        state["authority"] = "ACTIVE"
+        state["grant_disabled"] = "disabled"
+        state["revoke_disabled"] = "disabled"
+        state["reason"] = (
+            "Judge/Test Mode granted isolated non-production standing "
+            "authority for this repeatable judging session. Production UCII "
+            "delegated authority was not created or modified."
+        )
+        state["timeline"] += (
+            "<li><strong>JUDGE_AUTHORITY_GRANTED</strong>"
+            "<span class=\"muted\">Isolated non-production Judge/Test "
+            "authority is ACTIVE. Production UCII authority remains "
+            "untouched.</span></li>"
+        )
+
+    if judge_authority_state == "REVOKED":
+        state["authority"] = "REVOKED"
+        state["execution"] = "No execution"
+        state["approve_disabled"] = "disabled"
+        state["deny_disabled"] = "disabled"
+        state["grant_disabled"] = "disabled"
+        state["revoke_disabled"] = "disabled"
+        state["reason"] = (
+            "Judge/Test Mode revoked the isolated non-production authority. "
+            "Guardian's verified identity is unchanged. A reset is required "
+            "before another isolated Judge/Test grant can be created."
+        )
+        state["timeline"] += (
+            "<li><strong>JUDGE_AUTHORITY_REVOKED</strong>"
+            "<span class=\"muted\">Isolated non-production Judge/Test "
+            "authority is REVOKED. Production UCII authority remains "
+            "untouched.</span></li>"
+        )
 
     if grant is not None:
         state["authority"] = "ACTIVE"
@@ -261,6 +362,29 @@ def render_guardian_page(
         state["reason"] = budget_message
 
     budget_value = f"{_get_budget_policy().max_transaction_usd:.2f}"
+
+    judge_reset_control = ""
+    judge_mode_notice = ""
+
+    if _is_judge_test_mode():
+        judge_reset_control = (
+            '<form method="post" action="/reset">'
+            '<div class="actions">'
+            '<button class="deny" type="submit">Reset Demo/Test</button>'
+            '</div>'
+            '</form>'
+        )
+
+        judge_mode_notice = (
+            '<div class="judge-mode-notice">'
+            '<strong>JUDGE / TEST MODE ? isolated non-production '
+            'authority state</strong>'
+            '<span>Identity verification remains real. Judge/Test grant, '
+            'revoke, and reset are isolated and repeatable. Production '
+            'Guardian uses protected, expiring, one-use UCII lifecycle '
+            'authorization.</span>'
+            '</div>'
+        )
 
     page = """<!doctype html>
 <html lang="en">
@@ -423,6 +547,22 @@ button {
     display: block;
     margin-bottom: 4px;
 }
+.judge-mode-notice {
+    margin-bottom: 24px;
+    padding: 16px 18px;
+    border: 1px solid #f5b942;
+    border-radius: 12px;
+    background: rgba(245, 185, 66, 0.08);
+}
+.judge-mode-notice strong {
+    display: block;
+    margin-bottom: 6px;
+    letter-spacing: 0.04em;
+}
+.judge-mode-notice span {
+    color: #b7c2d8;
+    line-height: 1.5;
+}
 .footer-note {
     margin-top: 32px;
     color: #7784a1;
@@ -440,6 +580,7 @@ button {
 </head>
 <body>
 <main>
+{judge_mode_notice}
 <header>
 <div class="eyebrow">Bounded Autonomous Authority</div>
 <h1>UCII Guardian</h1>
@@ -525,6 +666,8 @@ placeholder="Example: Purchase one printer cartridge under $80.">{request_value}
 <button class="revoke" type="submit" {revoke_disabled}>Revoke Authority</button>
 </div>
 </form>
+
+{judge_reset_control}
 </aside>
 </div>
 
@@ -555,6 +698,8 @@ permission to execute a consequential action.
         "{grant_disabled}": state["grant_disabled"],
         "{revoke_disabled}": state["revoke_disabled"],
         "{budget_value}": budget_value,
+        "{judge_reset_control}": judge_reset_control,
+        "{judge_mode_notice}": judge_mode_notice,
     }
 
     for placeholder, value in replacements.items():
@@ -615,14 +760,25 @@ async def evaluate(request: Request) -> HTMLResponse:
 
     agent, config, recorder, receipts = build_runtime()
 
-    outcome = run_guardian_request(
-        agent=agent,
-        request=human_request,
-        config=config,
-        recorder=recorder,
-        receipt_directory=receipts,
-        budget_policy=_get_budget_policy(),
-    )
+    if _is_judge_test_mode():
+        outcome = run_guardian_request(
+            agent=agent,
+            request=human_request,
+            config=config,
+            recorder=recorder,
+            receipt_directory=receipts,
+            budget_policy=_get_budget_policy(),
+            authority_checker=_get_judge_authority_state(config).check,
+        )
+    else:
+        outcome = run_guardian_request(
+            agent=agent,
+            request=human_request,
+            config=config,
+            recorder=recorder,
+            receipt_directory=receipts,
+            budget_policy=_get_budget_policy(),
+        )
 
     if (
         outcome.escalation is not None
@@ -695,6 +851,30 @@ async def set_budget(request: Request) -> HTMLResponse:
 async def grant(request: Request) -> HTMLResponse:
     _, config, _, _ = build_runtime()
 
+    if _is_judge_test_mode():
+        try:
+            judge_state = _get_judge_authority_state(config)
+            judge_state.grant()
+        except JudgeAuthorityError:
+            return HTMLResponse(
+                render_guardian_page(
+                    lifecycle_message=(
+                        "Judge/Test grant failed closed. Isolated "
+                        "non-production standing authority was not created."
+                    ),
+                ),
+                status_code=409,
+            )
+
+        _set_pending_context(None)
+        _set_active_authority_context(None)
+
+        return HTMLResponse(
+            render_guardian_page(
+                judge_authority_state=judge_state.authority_state,
+            )
+        )
+
     try:
         result = grant_standing_authority(
             config=config,
@@ -723,6 +903,32 @@ async def grant(request: Request) -> HTMLResponse:
 
 
 async def revoke(request: Request) -> HTMLResponse:
+    if _is_judge_test_mode():
+        _, config, _, _ = build_runtime()
+
+        try:
+            judge_state = _get_judge_authority_state(config)
+            judge_state.revoke()
+        except JudgeAuthorityError:
+            return HTMLResponse(
+                render_guardian_page(
+                    lifecycle_message=(
+                        "Judge/Test revocation failed closed. No isolated "
+                        "ACTIVE authority was revoked."
+                    ),
+                ),
+                status_code=409,
+            )
+
+        _set_active_authority_context(None)
+        _set_pending_context(None)
+
+        return HTMLResponse(
+            render_guardian_page(
+                judge_authority_state=judge_state.authority_state,
+            )
+        )
+
     context = _get_active_authority_context()
 
     if context is None:
@@ -758,6 +964,47 @@ async def revoke(request: Request) -> HTMLResponse:
             outcome=context.outcome,
             request_value=context.request_value,
             revocation=result,
+        )
+    )
+
+
+async def reset_judge_demo(request: Request) -> HTMLResponse:
+    if not _is_judge_test_mode():
+        return HTMLResponse(
+            render_guardian_page(),
+            status_code=404,
+        )
+
+    _, config, _, _ = build_runtime()
+
+    try:
+        judge_state = _get_judge_authority_state(config)
+        judge_state.reset()
+    except JudgeAuthorityError:
+        return HTMLResponse(
+            render_guardian_page(
+                lifecycle_message=(
+                    "Judge/Test reset failed closed. The isolated "
+                    "authority state was not changed."
+                ),
+            ),
+            status_code=409,
+        )
+
+    _set_pending_context(None)
+    _set_active_authority_context(None)
+    _set_budget_policy(
+        GuardianBudgetPolicy.from_value("0.00")
+    )
+
+    return HTMLResponse(
+        render_guardian_page(
+            judge_authority_state=judge_state.authority_state,
+            lifecycle_message=(
+                "Judge/Test demo reset complete. Isolated authority is "
+                "NOT_GRANTED, pending decisions are cleared, and the "
+                "human-controlled Budget Range is $0.00."
+            ),
         )
     )
 
@@ -805,6 +1052,7 @@ app = Starlette(
         Route("/budget", set_budget, methods=["POST"]),
         Route("/grant", grant, methods=["POST"]),
         Route("/revoke", revoke, methods=["POST"]),
+        Route("/reset", reset_judge_demo, methods=["POST"]),
         Route("/decision", decide, methods=["POST"]),
     ],
 )
