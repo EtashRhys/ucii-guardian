@@ -4,6 +4,8 @@
 
 **UCII Guardian is a human-governed authority agent built with AWS Strands Agents. It lets autonomous AI work without giving it unlimited permission to act.**
 
+**Demo video:** [Watch the UCII Guardian demo on YouTube](https://youtu.be/jlVy2hGfDyY)
+
 Humans define the operating boundaries. Guardian works autonomously inside them. When a request crosses a human-defined boundary, Guardian stops before consequential execution and asks for an explicit decision.
 
 Built for the **2026 Agents for Humans Hackathon — Professional Agents track**.
