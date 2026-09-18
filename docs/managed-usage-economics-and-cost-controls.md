@@ -281,6 +281,142 @@ Then calculate measured/controlled cost for at least:
 
 Also calculate the maximum cost an admitted request can create under the hard limits.
 
+## Empirical Guardian cost measurement — September 2026
+
+Status: **MEASURED FROM LOCAL GUARDIAN PROVENANCE + AWS COST EXPLORER**
+
+Measurement date: 2026-09-18.
+
+This section records the first empirical unit-economics study of the actual Guardian hackathon development/demo runtime. It replaces estimates with observed evidence while preserving attribution limits.
+
+### Request-to-model invocation contract
+
+The current runtime establishes this ordering in `run_guardian_request()`:
+
+```text
+propose_action(agent, request)
+ -> Strands agent(request, structured_output_model=ActionRequest)
+ -> structured ActionRequest returned
+ -> recorder.record_request(action)
+ -> UCII identity verification
+ -> UCII authority check
+ -> DENY / escalation / ALLOW
+ -> protected execution where applicable
+```
+
+`propose_action()` contains exactly one explicit Strands `agent(...)` invocation. `REQUEST_RECEIVED` is recorded only after that invocation successfully returns a structured `ActionRequest`. The escalation-continuation path explicitly does not invoke Strands.
+
+Therefore each recorded `REQUEST_RECEIVED` in this measured runtime establishes one successful initial Strands model invocation. A model invocation that fails before producing an `ActionRequest` would not produce `REQUEST_RECEIVED`, so the provenance ledger is not by itself a count of failed/pre-record model attempts.
+
+### Guardian provenance evidence
+
+Two local Guardian provenance ledgers were inspected read-only:
+
+- `guardian-web.jsonl`: 213 valid JSON records, 39 `REQUEST_RECEIVED` events, activity from 2026-09-10 through 2026-09-14 UTC.
+- `milestone7-20260910T213023Z.jsonl`: 12 valid JSON records, 2 `REQUEST_RECEIVED` events.
+
+Across both ledgers there were **41 `REQUEST_RECEIVED` events and 41 unique request IDs, with zero duplicate request IDs**.
+
+Observed unique Guardian requests by UTC date:
+
+| UTC date | Unique requests |
+| --- | ---: |
+| 2026-09-10 | 13 |
+| 2026-09-12 | 6 |
+| 2026-09-13 | 15 |
+| 2026-09-14 | 7 |
+| **Total** | **41** |
+
+The main ledger also recorded the expected independent security/execution facts, including identity verification, authority checks, authorization, execution starts/completions/refusals, revocation, escalation, and human decisions. These event classes must not be treated as additional model calls.
+
+### AWS Cost Explorer evidence
+
+AWS Cost Explorer was queried read-only for 2026-09-01 through 2026-09-18 inclusive, grouped by usage type with `UnblendedCost` and `UsageQuantity`.
+
+The account-level model usage for that interval was:
+
+- input: **73,263 tokens**;
+- output: **9,613 tokens**;
+- total: **82,876 tokens**;
+- model inference cost: **$0.41398400**;
+- complete AWS cost in the same query: **$0.41445481**.
+
+The Cost Explorer total reconciled to the exported billing CSV total of **$0.41445500** with a difference of only **-$0.00000019**.
+
+Daily model usage was:
+
+| UTC date | Input tokens | Output tokens | Total tokens | Model cost |
+| --- | ---: | ---: | ---: | ---: |
+| 2026-09-09 | 1,008 | 190 | 1,198 | $0.055874 |
+| 2026-09-10 | 27,012 | 3,830 | 30,842 | $0.138486 |
+| 2026-09-12 | 12,297 | 1,392 | 13,689 | $0.057771 |
+| 2026-09-13 | 19,362 | 2,701 | 22,063 | $0.098601 |
+| 2026-09-14 | 13,584 | 1,500 | 15,084 | $0.063252 |
+
+No Guardian `REQUEST_RECEIVED` evidence was present for 2026-09-09, so that day's 1,198 tokens and $0.055874 are **excluded from Guardian-attributed unit economics** rather than guessed to belong to Guardian.
+
+### Correlated Guardian-active window
+
+On the four dates containing recorded Guardian requests, AWS measured:
+
+- **72,255 input tokens**;
+- **9,423 output tokens**;
+- **81,678 total tokens**;
+- **$0.358110 model inference cost**;
+- **41 unique recorded Guardian requests**.
+
+Those Guardian-active dates contain approximately **98.55% of all model tokens** measured in the September 1–18 account-level window.
+
+The observed aggregate operational averages over the correlated window are therefore:
+
+- **1,762.32 input tokens per recorded Guardian request**;
+- **229.83 output tokens per recorded Guardian request**;
+- **1,992.15 total tokens per recorded Guardian request**;
+- **$0.00873439 model inference cost per recorded Guardian request**.
+
+That is approximately **0.87 US cents of model inference per recorded Guardian request** in this development/demo workload.
+
+Daily observed cost per recorded request:
+
+| UTC date | Requests | Model cost | Observed cost/request |
+| --- | ---: | ---: | ---: |
+| 2026-09-10 | 13 | $0.138486 | $0.010653 |
+| 2026-09-12 | 6 | $0.057771 | $0.009629 |
+| 2026-09-13 | 15 | $0.098601 | $0.006573 |
+| 2026-09-14 | 7 | $0.063252 | $0.009036 |
+
+### Attribution boundary
+
+This is strong temporal and architectural correlation, not provider-side per-request cryptographic attribution.
+
+The measured statement is:
+
+> **During the four dates with 41 recorded Guardian requests, the AWS account incurred $0.358110 of model inference for 81,678 tokens, an observed average of approximately $0.00873 per recorded Guardian request.**
+
+Do not silently strengthen that statement to claim that AWS proved every one of those tokens was generated by Guardian. The account-level Cost Explorer data does not carry Guardian request IDs.
+
+The code/provenance relationship does establish that each recorded `REQUEST_RECEIVED` followed one successful initial Strands model invocation. It does not count model attempts that fail before a structured `ActionRequest` is returned.
+
+### Scaling illustrations — not forecasts
+
+Holding the measured $0.00873439/request average constant only for illustration:
+
+| Comparable requests | Straight-line model-cost illustration |
+| --- | ---: |
+| 100 | ~$0.87 |
+| 1,000 | ~$8.73 |
+| 10,000 | ~$87.34 |
+| 100,000 | ~$873.44 |
+| 1,000,000 | ~$8,734.39 |
+
+These are **not production forecasts or prices**. Production prompt size, selected model, provider pricing, retries, failures, concurrency, model behavior, and future functionality can materially change unit cost.
+
+### Current cost-risk conclusion
+
+The measured hackathon runtime does not show a large hidden Strands/AgentCore infrastructure bill. Repository inspection shows Guardian constructs Strands with `tools=[]`; Strands normalizes the human request into an `ActionRequest`, while UCII identity/authority evaluation and the protected executor remain outside model authority.
+
+For the measured September workload, model inference dominated AWS spend. This does not remove the need for hard resource ceilings before any UCII-funded public managed service. It does establish a concrete baseline from which those controls and future pricing can be designed.
+
 ## Pricing acceptance rule
 
 Do not publish a managed Guardian x402 price until all of the following are established:
@@ -321,6 +457,6 @@ UCII should make catastrophic surprise infrastructure bills structurally impossi
 
 ## Next engineering step
 
-**Do not implement pricing from this document alone.**
+The initial dependency/invocation audit and September 2026 empirical baseline are now complete.
 
-First perform a read-only dependency and invocation audit of the actual Guardian execution path. Identify every paid AWS/model/tool dependency Guardian currently invokes and the exact usage dimensions that can generate cost. From that evidence, calculate real Guardian unit economics and design the smallest enforceable cost-control boundary before exposing any UCII-funded managed service publicly.
+**Do not publish managed-service pricing from the average alone.** Before exposing any UCII-funded Guardian service publicly, establish the smallest deterministic cost-control boundary: per-request model/token ceilings, per-identity quotas, system-wide spend/circuit-breaker limits, and measured worst-case/failure-path cost. Then remeasure under a production-representative workload and set economic admission/x402 policy from bounded cost rather than from the hackathon average.
